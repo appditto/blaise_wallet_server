@@ -1,0 +1,10 @@
+# Main server
+aiohttp
+aioredis
+python-dotenv
+uvloop
+# Price cron
+redis
+requests
+# Development
+pylint
