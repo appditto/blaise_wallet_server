@@ -57,11 +57,13 @@ rpc_whitelist = [
     'getaccount',
     'getblock',
     'getblocks',
+    'getblockcount',
     'getblockoperation',
     'getblockoperations',
     'getaccountoperations',
     'getpendings',
     'getpendingscount',
+    'findaccounts',
     'findoperation',
     'operationsinfo',
     'executeoperations'
