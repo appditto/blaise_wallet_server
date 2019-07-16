@@ -76,7 +76,7 @@ async def http_api(r: web.Request):
         request_json = await r.json()
         if 'action' not in request_json:
             return web.HTTPBadRequest(reason="Bad request")
-        elif 'action' == 'price_data':
+        elif request_json['action'] == 'price_data':
             return web.json_response({'price':await r.app['rdata'].hget("prices", "coingecko:pasc-usd")})
         return web.HTTPBadRequest(reason="Bad request")
     except Exception:
