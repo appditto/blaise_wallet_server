@@ -71,6 +71,18 @@ rpc_whitelist = [
 
 # APIs
 
+async def http_api(r: web.Request):
+    try:
+        request_json = await r.json()
+        if 'action' not in request_json:
+            return web.HTTPBadRequest(reason="Bad request")
+        elif 'action' == 'price_data':
+            return web.json_response({'price':await r.app['rdata'].hget("prices", "coingecko:pasc-usd")})
+        return web.HTTPBadRequest(reason="Bad request")
+    except Exception:
+        return web.HTTPBadRequest(reason="Bad request")
+
+
 async def whitelist_rpc(r: web.Request):
     """For sending stanard json-rpc requests to this server, methods will be filtered by rpc_whitelist"""
     try:
@@ -122,6 +134,7 @@ async def init_app():
 
     app = web.Application()
     app.add_routes([web.post('/rawrpc', whitelist_rpc)]) # HTTP API
+    app.add_routes([web.post('/v1', http_api)]) # HTTP API
     app.on_startup.append(open_redis)
     app.on_shutdown.append(close_redis)
 
