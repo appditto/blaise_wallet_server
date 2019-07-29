@@ -168,7 +168,10 @@ async def handle_user_message(r : web.Request, message : str, ws : web.WebSocket
                 # already subscribed, reconnect (websocket connections)
                 if 'uuid' in request_json:
                     uid = request_json['uuid']
-                    del r.app['clients'][uid]
+                    try:
+                        del r.app['clients'][uid]
+                    except Exception:
+                        pass
                     ws.id = uid
                     r.app['clients'][uid] = ws
                     log.server_logger.info('reconnection request;' + address + ';' + uid)
