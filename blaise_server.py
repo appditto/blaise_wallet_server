@@ -6,17 +6,20 @@ import json
 import os
 import sys
 import logging
+import uuid
+import time
 from logging.handlers import TimedRotatingFileHandler, WatchedFileHandler
 
 import uvloop
 
-from aiohttp import ClientSession, log, web
+from aiohttp import ClientSession, log, web, WSMessage, WSMsgType
 from aioredis import create_redis
 
 from dotenv import load_dotenv
 load_dotenv()
 
 from price_cron import currency_list # Supported currencies
+from util import Util
 
 # Use uvloop
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -44,6 +47,7 @@ except Exception:
     sys.exit(0)
 
 price_prefix = 'coingecko:pasc'
+util = Util()
 
 # Environment configuration
 
@@ -69,7 +73,219 @@ rpc_whitelist = [
     'executeoperations'
 ]
 
+# Whitelisting proprietary WS actions
+ws_whitelist = [
+    'account_subscribe'
+]
+
 # APIs
+
+# Websocket
+
+async def ws_reconnect(ws : web.WebSocketResponse, r : web.Response, account : int):
+    """When a websocket connection sends a subscribe request, do this reconnection step"""
+    log.server_logger.info('reconnecting;' + util.get_request_ip(r) + ';' + ws.id)
+
+    if account in r.app['subscriptions']:
+        r.app['subscriptions'][account].add(ws.id)
+    else:
+        r.app['subscriptions'][account] = set()
+        r.app['subscriptions'][account].add(ws.id)
+    r.app['cur_prefs'][ws.id] = await r.app['rdata'].hget(ws.id, "currency")
+    price_cur = await r.app['rdata'].hget("prices", f"{price_prefix}-" + r.app['cur_prefs'][ws.id].lower())
+    price_btc = await r.app['rdata'].hget("prices", f"{price_prefix}-btc")
+    response = {}
+    response['currency'] = r.app['cur_prefs'][ws.id].lower()
+    response['price'] = float(price_cur)
+    response['btc'] = float(price_btc)
+    response = json.dumps(response)
+
+    log.server_logger.info(
+        'reconnect response sent ; %s bytes; %s; %s', str(len(response)), util.get_request_ip(r), ws.id)
+
+    await ws.send_str(response)
+
+async def ws_connect(ws : web.WebSocketResponse, r : web.Response, account : int, currency : str):
+    """Clients subscribing for the first time"""
+    log.server_logger.info('subscribing;%s;%s', util.get_request_ip(r), ws.id)
+
+    if account in r.app['subscriptions']:
+        r.app['subscriptions'][account].add(ws.id)
+    else:
+        r.app['subscriptions'][account] = set()
+        r.app['subscriptions'][account].add(ws.id)
+    await r.app['rdata'].hset(ws.id, "account", json.dumps([account]))
+    r.app['cur_prefs'][ws.id] = currency
+    await r.app['rdata'].hset(ws.id, "currency", currency)
+    await r.app['rdata'].hset(ws.id, "last-connect", float(time.time()))
+    response = {}
+    response['uuid'] = ws.id
+    price_cur = await r.app['rdata'].hget("prices", f"{price_prefix}-" + r.app['cur_prefs'][ws.id].lower())
+    price_btc = await r.app['rdata'].hget("prices", f"{price_prefix}-btc")
+    response['currency'] = r.app['cur_prefs'][ws.id].lower()
+    response['price'] = float(price_cur)
+    response['btc'] = float(price_btc)
+    response = json.dumps(response)
+
+    log.server_logger.info(
+        'subscribe response sent ; %s bytes; %s; %s', str(len(response)), util.get_request_ip(r), ws.id)
+
+    await ws.send_str(response)
+
+async def handle_user_message(r : web.Request, message : str, ws : web.WebSocketResponse = None):
+    """Process data sent by client"""
+    address = util.get_request_ip(r)
+    uid = ws.id if ws is not None else '0'
+    now = int(round(time.time() * 1000))
+    if address in r.app['last_msg']:
+        if (now - r.app['last_msg'][address]['last']) < 25:
+            if r.app['last_msg'][address]['count'] > 3:
+                log.server_logger.error('client messaging too quickly: %s ms; %s; %s; User-Agent: %s', str(
+                    now - r.app['last_msg'][address]['last']), address, uid, str(
+                    r.headers.get('User-Agent')))
+                return None
+            else:
+                r.app['last_msg'][address]['count'] += 1
+        else:
+            r.app['last_msg'][address]['count'] = 0
+    else:
+        r.app['last_msg'][address] = {}
+        r.app['last_msg'][address]['count'] = 0
+    r.app['last_msg'][address]['last'] = now
+    log.server_logger.info('request; %s, %s, %s', message, address, uid)
+    if message not in r.app['active_messages']:
+        r.app['active_messages'].add(message)
+    else:
+        log.server_logger.error('request already active; %s; %s; %s', message, address, uid)
+        return None
+    ret = None
+    try:
+        request_json = json.loads(message)
+        if request_json['action'] in ws_whitelist:
+            # rpc: account_subscribe (only applies to websocket connections)
+            if request_json['action'] == "account_subscribe" and ws is not None:
+                # If account doesnt match the uuid self-heal
+                resubscribe = True
+                if 'uuid' in request_json:
+                    account = await r.app['rdata'].hget(request_json['uuid'], "account")
+                    # No account for this uuid, first subscribe
+                    if account is None:
+                        resubscribe = False
+                    else:
+                        # add this account to the list
+                        try:
+                            account_list = json.loads(account)
+                            if 'account' in request_json and request_json['account'] not in account_list:
+                                account_list.append(request_json['account'])
+                                await r.app['rdata'].hset(request_json['uuid'], "account", json.dumps(account_list))
+                        except Exception:
+                            if 'account' in request_json and request_json['account'] != account:
+                                resubscribe = False
+                            else:
+                                account_list = []
+                                account_list.append(account)
+                                await r.app['rdata'].hset(request_json['uuid'], "account", json.dumps(account_list))
+                # already subscribed, reconnect (websocket connections)
+                if 'uuid' in request_json and resubscribe:
+                    del r.app['clients'][uid]
+                    uid = request_json['uuid']
+                    ws.id = uid
+                    r.app['clients'][uid] = ws
+                    log.server_logger.info('reconnection request;' + address + ';' + uid)
+                    try:
+                        if 'currency' in request_json and request_json['currency'] in currency_list:
+                            currency = request_json['currency']
+                            r.app['cur_prefs'][uid] = currency
+                            await r.app['rdata'].hset(uid, "currency", currency)
+                        else:
+                            setting = await r.app['rdata'].hget(uid, "currency")
+                            if setting is not None:
+                                r.app['cur_prefs'][uid] = setting
+                            else:
+                                r.app['cur_prefs'][uid] = 'usd'
+                                await r.app['rdata'].hset(uid, "currency", 'usd')
+
+                        # Get relevant account
+                        account_list = json.loads(await r.app['rdata'].hget(uid, "account"))
+                        if 'account' in request_json:
+                            account = request_json['account']
+
+                        await ws_reconnect(ws, r, account)
+                    except Exception as e:
+                        log.server_logger.error('reconnect error; %s; %s; %s', str(e), address, uid)
+                        reply = {'error': 'reconnect error', 'detail': str(e)}
+                        ret = json.dumps(reply)
+                # new user, setup uuid(or use existing if available) and account info
+                else:
+                    log.server_logger.info('subscribe request; %s; %s', util.get_request_ip(r), uid)
+                    try:
+                        if 'currency' in request_json and request_json['currency'] in currency_list:
+                            currency = request_json['currency']
+                        else:
+                            currency = 'usd'
+                        await ws_connect(ws, r, request_json['account'], currency)
+                    except Exception as e:
+                        log.server_logger.error('subscribe error;%s;%s;%s', str(e), address, uid)
+                        reply = {'error': 'subscribe error', 'detail': str(e)}
+                        ret = json.dumps(reply)
+    except Exception as e:
+        log.server_logger.exception('uncaught error;%s;%s', util.get_request_ip(r), uid)
+        ret = json.dumps({
+            'error':'general error',
+            'detail':str(sys.exc_info())
+        })
+    finally:
+        r.app['active_messages'].remove(message)
+        return ret
+
+async def websocket_handler(r : web.Request):
+    """Handler for websocket connections and messages"""
+
+    ws = web.WebSocketResponse()
+    await ws.prepare(r)
+
+    # Connection Opened
+    ws.id = str(uuid.uuid4())
+    r.app['clients'][ws.id] = ws
+    log.server_logger.info('new connection;%s;%s;User-Agent:%s', util.get_request_ip(r), ws.id, str(
+        r.headers.get('User-Agent')))
+
+    try:
+        async for msg in ws:
+            if msg.type == WSMsgType.TEXT:
+                if msg.data == 'close':
+                    await ws.close()
+                else:
+                    reply = await handle_user_message(r, msg.data, ws=ws)
+                    if reply is not None:
+                        log.server_logger.debug('Sending response %s to %s', reply, util.get_request_ip(r))
+                        await ws.send_str(reply)
+            elif msg.type == WSMsgType.CLOSE:
+                log.server_logger.info('WS Connection closed normally')
+                break
+            elif msg.type == WSMsgType.ERROR:
+                log.server_logger.info('WS Connection closed with error %s', ws.exception())
+                break
+
+        log.server_logger.info('WS connection closed normally')
+    except Exception:
+        log.server_logger.exception('WS Closed with exception')
+    finally:
+        if ws.id in r.app['clients']:
+            del r.app['clients'][ws.id]
+        for acct in r.app['subscriptions']:
+            if ws.id in r.app['subscriptions'][acct]:
+                if len(r.app['subscriptions'][acct]) == 1:
+                    del r.app['subscriptions'][acct]
+                    break
+                else:
+                    r.app['subscriptions'][acct].remove(ws.id)
+                    break
+        await ws.close()
+
+    return ws
+
+# HTTP
 
 async def http_api(r: web.Request):
     try:
@@ -107,6 +323,34 @@ async def whitelist_rpc(r: web.Request):
         log.server_logger.exception("received exception in http_api")
         return web.HTTPInternalServerError(reason=f"Something went wrong {str(sys.exc_info())}")
 
+# Periodic Tasks
+async def send_prices(app):
+    """Send price updates to connected clients once per minute"""
+    while True:
+        try:
+            if len(app['clients']):
+                log.server_logger.info('pushing price data to %d connections', len(app['clients']))
+                btc = float(await app['rdata'].hget("prices", f"{price_prefix}-btc"))
+                for client, ws in list(app['clients'].items()):
+                    try:
+                        try:
+                            currency = app['cur_prefs'][client]
+                        except Exception:
+                            currency = 'usd'
+                        price = float(await app['rdata'].hget("prices", f"{price_prefix}-" + currency.lower()))
+
+                        response = {
+                            'currency':currency.lower(),
+                            "price":str(price),
+                            'btc':str(btc)
+                        }
+                        await ws.send_str(json.dumps(response))
+                    except Exception:
+                        log.server_logger.exception('error pushing prices for client %s', client)
+        except Exception:
+            log.server_logger.exception("exception pushing price data")
+        await asyncio.sleep(60)
+
 async def init_app():
     """ Initialize the main application instance and return it"""
     async def close_redis(app):
@@ -119,6 +363,10 @@ async def init_app():
         log.server_logger.info("Opening redis connections")
         app['rdata'] = await create_redis(('localhost', 6379),
                                                 db=2, encoding='utf-8')
+        app['clients'] = {} # Keep track of connected clients
+        app['last_msg'] = {} # Last time a client has sent a message
+        app['active_messages'] = set() # Avoid duplicate messages from being processes simultaneously
+        app['cur_prefs'] = {} # Client currency preferences
 
     # Setup logger
     if debug_mode:
@@ -133,6 +381,7 @@ async def init_app():
         root.addHandler(TimedRotatingFileHandler(log_file, when="d", interval=1, backupCount=100))        
 
     app = web.Application()
+    app.add_routes([web.get('/', websocket_handler)]) # All WS requests
     app.add_routes([web.post('/rawrpc', whitelist_rpc)]) # HTTP API
     app.add_routes([web.post('/v1', http_api)]) # HTTP API
     app.on_startup.append(open_redis)
@@ -144,6 +393,9 @@ app = asyncio.get_event_loop().run_until_complete(init_app())
 
 def main():
     """Main application loop"""
+
+    # Periodic price job
+    price_task = asyncio.get_event_loop().create_task(send_prices(app))
 
     # Start web/ws server
     async def start():
