@@ -86,9 +86,9 @@ async def ws_reconnect(ws : web.WebSocketResponse, r : web.Response, account : i
     """When a websocket connection sends a subscribe request, do this reconnection step"""
     log.server_logger.info('reconnecting;' + util.get_request_ip(r) + ';' + ws.id)
 
-    if account in r.app['subscriptions']:
+    if account is not None and account in r.app['subscriptions']:
         r.app['subscriptions'][account].add(ws.id)
-    else:
+    elif account is not None:
         r.app['subscriptions'][account] = set()
         r.app['subscriptions'][account].add(ws.id)
     r.app['cur_prefs'][ws.id] = await r.app['rdata'].hget(ws.id, "currency")
@@ -109,12 +109,13 @@ async def ws_connect(ws : web.WebSocketResponse, r : web.Response, account : int
     """Clients subscribing for the first time"""
     log.server_logger.info('subscribing;%s;%s', util.get_request_ip(r), ws.id)
 
-    if account in r.app['subscriptions']:
+    if account is not None and account in r.app['subscriptions']:
         r.app['subscriptions'][account].add(ws.id)
-    else:
+        await r.app['rdata'].hset(ws.id, "account", json.dumps([account]))
+    elif account is not None:
         r.app['subscriptions'][account] = set()
         r.app['subscriptions'][account].add(ws.id)
-    await r.app['rdata'].hset(ws.id, "account", json.dumps([account]))
+        await r.app['rdata'].hset(ws.id, "account", json.dumps([account]))
     r.app['cur_prefs'][ws.id] = currency
     await r.app['rdata'].hset(ws.id, "currency", currency)
     await r.app['rdata'].hset(ws.id, "last-connect", float(time.time()))
@@ -164,31 +165,10 @@ async def handle_user_message(r : web.Request, message : str, ws : web.WebSocket
         if request_json['action'] in ws_whitelist:
             # rpc: account_subscribe (only applies to websocket connections)
             if request_json['action'] == "account_subscribe" and ws is not None:
-                # If account doesnt match the uuid self-heal
-                resubscribe = True
-                if 'uuid' in request_json:
-                    account = await r.app['rdata'].hget(request_json['uuid'], "account")
-                    # No account for this uuid, first subscribe
-                    if account is None:
-                        resubscribe = False
-                    else:
-                        # add this account to the list
-                        try:
-                            account_list = json.loads(account)
-                            if 'account' in request_json and request_json['account'] not in account_list:
-                                account_list.append(request_json['account'])
-                                await r.app['rdata'].hset(request_json['uuid'], "account", json.dumps(account_list))
-                        except Exception:
-                            if 'account' in request_json and request_json['account'] != account:
-                                resubscribe = False
-                            else:
-                                account_list = []
-                                account_list.append(account)
-                                await r.app['rdata'].hset(request_json['uuid'], "account", json.dumps(account_list))
                 # already subscribed, reconnect (websocket connections)
-                if 'uuid' in request_json and resubscribe:
-                    del r.app['clients'][uid]
+                if 'uuid' in request_json:
                     uid = request_json['uuid']
+                    del r.app['clients'][uid]
                     ws.id = uid
                     r.app['clients'][uid] = ws
                     log.server_logger.info('reconnection request;' + address + ';' + uid)
@@ -206,7 +186,7 @@ async def handle_user_message(r : web.Request, message : str, ws : web.WebSocket
                                 await r.app['rdata'].hset(uid, "currency", 'usd')
 
                         # Get relevant account
-                        account_list = json.loads(await r.app['rdata'].hget(uid, "account"))
+                        account = None
                         if 'account' in request_json:
                             account = request_json['account']
 
@@ -223,7 +203,8 @@ async def handle_user_message(r : web.Request, message : str, ws : web.WebSocket
                             currency = request_json['currency']
                         else:
                             currency = 'usd'
-                        await ws_connect(ws, r, request_json['account'], currency)
+                        account = request_json['account'] if 'account' in request_json else None
+                        await ws_connect(ws, r, account, currency)
                     except Exception as e:
                         log.server_logger.error('subscribe error;%s;%s;%s', str(e), address, uid)
                         reply = {'error': 'subscribe error', 'detail': str(e)}
