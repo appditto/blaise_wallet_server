@@ -34,7 +34,7 @@ class PASAApi():
 
     async def reset_expiry(self, redis: Redis, pasa_obj: dict):
         """Reset the expiry for a PASA"""
-        pasa_obj['expires'] = Util.ms_since_epoch(datetime.datetime.utcnow())
+        pasa_obj['expires'] = Util.ms_since_epoch(datetime.datetime.utcnow()) + PASA_SOFT_EXPIRY
         await redis.set(f"borrowedpasa_{str(pasa_obj['pasa'])}", json.dumps(pasa_obj), expire=PASA_HARD_EXPIRY)
         return pasa_obj
 
@@ -59,7 +59,7 @@ class PASAApi():
         borrow_obj = {
             'b58_pubkey': pubkey,
             'pasa': pasa,
-            'expires': Util.ms_since_epoch(datetime.datetime.utcnow()),
+            'expires': Util.ms_since_epoch(datetime.datetime.utcnow()) + PASA_SOFT_EXPIRY,
             'price': PASA_PRICE,
             'paid': False
         }
