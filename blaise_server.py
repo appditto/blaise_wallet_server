@@ -13,7 +13,7 @@ from logging.handlers import TimedRotatingFileHandler, WatchedFileHandler
 import uvloop
 
 from aiohttp import ClientSession, log, web, WSMessage, WSMsgType
-from aioredis import create_redis_pool
+from aioredis import create_redis_pool, Redis
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -22,6 +22,7 @@ from price_cron import currency_list # Supported currencies
 from util import Util
 from account_distribution import PASAApi
 from json_rpc import PascJsonRpc
+from settings import PASA_PRICE
 
 # Use uvloop
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -33,8 +34,6 @@ parser.add_argument('--path', type=str, help='(Optional) Path to run application
 parser.add_argument('-p', '--port', type=int, help='Port to listen on', default=4443)
 parser.add_argument('--log-file', type=str, help='Log file location', default='blaise_server.log')
 options = parser.parse_args()
-
-pasa_api = PASAApi(PascJsonRpc())
 
 try:
     listen_host = str(ipaddress.ip_address(options.host))
@@ -57,6 +56,9 @@ util = Util()
 
 rpc_url = os.getenv('RPC_URL', 'http://127.0.0.1:4003') # Should be the PascalCoin daemon RPC address
 debug_mode = True if int(os.getenv('DEBUG', 1)) != 0 else False
+
+jrpc_client = PascJsonRpc(rpc_url)
+pasa_api = PASAApi(jrpc_client)
 
 # Local constants
 
@@ -284,6 +286,8 @@ async def http_api(r: web.Request):
             return web.json_response({'price':await r.app['rdata'].hget("prices", "coingecko:pasc-usd")})
         elif request_json['action'] == 'borrow_account':
             return await pasa_api.borrow_account(r)
+        elif request_json['action'] == 'getborrowed':
+            return await pasa_api.getborrowed(r)
         return web.HTTPBadRequest(reason="Bad request")
     except Exception:
         return web.HTTPBadRequest(reason="Bad request")
@@ -339,6 +343,39 @@ async def send_prices(app):
                         log.server_logger.exception('error pushing prices for client %s', client)
         except Exception:
             log.server_logger.exception("exception pushing price data")
+        finally:
+            await asyncio.sleep(60)
+
+async def check_borrowed_pasa(app):
+    try:
+        # Get list of PASAs which are borrowed
+        redis: Redis = app['rdata']
+        match = 'borrowedpasa_*'
+        cur = b'0'
+        pasa_list = []
+        while cur:
+            cur, keys = await redis.scan(cur, match=match)
+            for key in keys:
+                try:
+                    pasa_list.append(json.loads(await redis.get(key)))
+                except Exception:
+                    pass
+        # Check each borrowed account to see if it has a balance >= threshold
+        for bpasa in pasa_list:
+            if bpasa['paid']:
+                await pasa_api.transfer_account(redis, int(bpasa['pasa']))
+                continue
+            acct = jrpc_client.getaccount(int(bpasa['pasa']))
+            if acct is None:
+                continue
+            elif float(acct['balance']) >= PASA_PRICE:
+                # Account is sold, transfer the funds
+                await pasa_api.send_funds(redis, bpasa)
+                # Change public key
+                await pasa_api.transfer_account(redis, int(bpasa['pasa']))
+    except Exception:
+        log.server_logger.exception("exception checking borrowed PASA")
+    finally:
         await asyncio.sleep(60)
 
 async def init_app():

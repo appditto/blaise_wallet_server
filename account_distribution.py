@@ -1,21 +1,14 @@
 """PASA Distribution"""
-import json
 import datetime
+import json
+
 import base58
-from aiohttp import web
+from aiohttp import web, log
 from aioredis import Redis
 
 from json_rpc import PascJsonRpc
 from util import Util
-
-# Account used to sign transactions with fees
-SIGNER_ACCOUNT = 1185739
-# Public key of our account
-PUBKEY_B58 = '3Ghhbokf2qNsZYmoK5kNvzo4zdoR5vcdMGEzf6Jgz3xZDrniNMFgrcwQaTjtkpvUvm1S7JStjxZZJWSSgxQECJdu4BhpAjPqQrDjoY'
-# Soft Expiry of Borrowed Pasa (milliseconds)
-PASA_SOFT_EXPIRY = 259200000 # 3 days
-# Hard expiry of borrowed pasa (seconds)
-PASA_HARD_EXPIRY = 2592000 # 30 days
+from settings import SIGNER_ACCOUNT, PUBKEY_B58, PASA_HARD_EXPIRY, PASA_SOFT_EXPIRY, PASA_PRICE
 
 class PASAApi():
     def __init__(self, rpc_client: PascJsonRpc):
@@ -52,13 +45,13 @@ class PASAApi():
 
     async def pubkey_has_borrowed(self, redis: Redis, pubkey: str):
         """Returns PASA object if public key has already borrowed an account, None otherwise"""
-        pasa = await redis.get(f"borrowed_pasa_{pubkey}")
+        pasa = await redis.get(f"borrowed_pasapub_{pubkey}")
         if pasa is None:
             return None
         bpasa = await self.get_borrowed_pasa(redis, int(pasa))
         if bpasa is not None:
             return bpasa
-        await redis.delete(f"borrowed_pasa_{pubkey}")
+        await redis.delete(f"borrowed_pasapub_{pubkey}")
         return None
 
     async def initiate_borrow(self, redis: Redis, pubkey: str, pasa: int):
@@ -66,12 +59,59 @@ class PASAApi():
         borrow_obj = {
             'b58_pubkey': pubkey,
             'pasa': pasa,
-            'expires': Util.ms_since_epoch(datetime.datetime.utcnow())
+            'expires': Util.ms_since_epoch(datetime.datetime.utcnow()),
+            'paid': False
         }
         await redis.set(f'borrowedpasa_{str(pasa)}', json.dumps(borrow_obj), expire=PASA_HARD_EXPIRY)
-        await redis.set(f"borrowed_pasa_{pubkey}", str(pasa), expire=PASA_HARD_EXPIRY)
+        await redis.set(f"borrowed_pasapub_{pubkey}", str(pasa), expire=PASA_HARD_EXPIRY)
         return borrow_obj
 
+    async def send_funds(self, redis: Redis, bpasa: dict):
+        """Transfer the fee of the borrowed account to the signer, and mark it as paid"""
+        payload = "Blaise PASA Fee"
+        hex_payload = payload.encode("utf-8").hex()
+        resp = await self.rpc_client.sendto(int(bpasa['pasa']), SIGNER_ACCOUNT, PASA_PRICE, hex_payload)
+        if resp is None:
+            return None
+        # Mark account as paid
+        log.server_logger.info(f"Account {bpasa['pasa']} has been sold to {bpasa['b58_pubkey']}, ophash {resp['ophash']}")
+        bpasa['paid'] = True
+        await redis.set(f'borrowedpasa_{str(bpasa["pasa"])}', json.dumps(bpasa), expire=PASA_HARD_EXPIRY)
+        return resp['ophash']
+
+    async def transfer_account(self, redis: Redis, pasa: int):
+        """Change the key of a purchased account"""
+        bpasa = await redis.get(f"borrowedpasa_{str(pasa)}")
+        if bpasa is None:
+            return None
+        bpasa = json.loads(bpasa)
+        if bpasa['paid']:
+            resp = await self.rpc_client.changeaccountinfo(SIGNER_ACCOUNT, bpasa['b58_pubkey'])
+            if resp is not None:
+                log.server_logger.info(f"Transferred account {bpasa['pasa']} to {bpasa['b58_pubkey']}. hash: {resp['ophash']}")
+                # Sale complete
+                return resp['ophash']
+
+    async def getborrowed(self, r: web.Request):
+        """Get a borrowed account, if it exists"""
+        req_json = r.json()
+        if 'b58_pubkey' not in req_json:
+            return web.HTTPBadRequest(reason="Bad request - missing b58_pubkey")
+        elif len(req_json['b58_pubkey']) < 80:
+            log.server_logger.info(f'received invalid pubkey {req_json["b58_pubkey"]} (length)')
+            return web.json_response({'error': 'invalid public key'})
+        try:
+            base58.b58decode(req_json['b58_pubkey'])
+        except ValueError:
+            log.server_logger.info(f'received invalid pubkey {req_json["b58_pubkey"]} (b58decode)')
+            return web.json_response({'error': 'invalid public key'})
+        # Get the account that is borrowed
+        redis: Redis = r.app['rdata']
+        bpasa = await self.pubkey_has_borrowed(redis, req_json['b58_pubkey'])
+        resp_json = {
+            'borrowed_account': bpasa if bpasa is not None else ''
+        }
+        return web.json_response(resp_json)
 
     async def borrow_account(self, r: web.Request):
         """Borrow an account
@@ -93,35 +133,41 @@ class PASAApi():
         if 'b58_pubkey' not in req_json:
             return web.HTTPBadRequest(reason="Bad request - missing b58_pubkey")
         elif len(req_json['b58_pubkey']) < 80:
+            log.server_logger.info(f'received invalid pubkey {req_json["b58_pubkey"]} (length)')
             return web.json_response({'error': 'invalid public key'})
         try:
             base58.b58decode(req_json['b58_pubkey'])
         except ValueError:
+            log.server_logger.info(f'received invalid pubkey {req_json["b58_pubkey"]} (b58decode)')
             return web.json_response({'error': 'invalid public key'})
         redis: Redis = r.app['rdata'] 
         # Ensure this pubkey does not already have a borrowed account
         bpasa = await self.pubkey_has_borrowed(redis, req_json['b58_pubkey'])
         if bpasa is not None:
             # Reset expiry and return result
+            log.server_logger.debug(f'resetting expiry and returning {req_json["b58_pubkey"]}, pasa {bpasa["pasa"]}')
             return web.json_response(await self.reset_expiry(redis, bpasa))
         # Do findaccounts request
         last_borrowed = await self.get_last_borrowed(redis)
         accounts = await self.rpc_client.findaccounts(start=await self.get_last_borrowed(redis), b58_pubkey=PUBKEY_B58)
         if accounts is None:
+            log.server_logger.error('findaccounts response failed')
             return web.json_response({'error':'findaccounts response failed'})
         resp = None
         for acct in accounts:
             acctnum = acct['account']
+            # Skip PASA that is already borrowed
             if self.pasa_is_borrowed(redis, acctnum):
                 continue
+            # Initiate a borrow of this pubkey
+            log.server_logger.debug(f'{req_json["b58_pubkey"]} is borrowing {acctnum}')
             resp = await self.initiate_borrow(redis, req_json['b58_pubkey'], acctnum)
             break
         if resp is None and len(accounts) < 75 and last_borrowed != SIGNER_ACCOUNT:
             # Retry, restarting at initial index
             await self.set_last_borrowed(redis, SIGNER_ACCOUNT)
             return await self.borrow_account(r)
+        elif resp is None:
+            return web.json_response({'error': 'could not lend any accounts, try again later'})
         await self.set_last_borrowed(redis, last_borrowed + 1)
         return web.json_response(resp)
-
-        
-
