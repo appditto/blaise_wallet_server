@@ -60,6 +60,7 @@ class PASAApi():
             'b58_pubkey': pubkey,
             'pasa': pasa,
             'expires': Util.ms_since_epoch(datetime.datetime.utcnow()),
+            'price': PASA_PRICE,
             'paid': False
         }
         await redis.set(f'borrowedpasa_{str(pasa)}', json.dumps(borrow_obj), expire=PASA_HARD_EXPIRY)
@@ -121,7 +122,8 @@ class PASAApi():
         }
         response:
         {
-            'borrowed_account':31334,
+            'pasa':31334,
+            'expiry'3333333,
             'price':0.25
         }
         error:

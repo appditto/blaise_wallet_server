@@ -368,7 +368,7 @@ async def check_borrowed_pasa(app):
             acct = jrpc_client.getaccount(int(bpasa['pasa']))
             if acct is None:
                 continue
-            elif float(acct['balance']) >= PASA_PRICE:
+            elif float(acct['balance']) >= float(bpasa['price']):
                 # Account is sold, transfer the funds
                 await pasa_api.send_funds(redis, bpasa)
                 # Change public key
