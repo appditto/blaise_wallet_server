@@ -423,6 +423,8 @@ def main():
 
     # Periodic price job
     price_task = asyncio.get_event_loop().create_task(send_prices(app))
+    # For PASA Purchases
+    pasa_task = asyncio.get_event_loop().create_task(check_borrowed_pasa(app))
 
     # Start web/ws server
     async def start():
