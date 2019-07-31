@@ -13,13 +13,15 @@ from logging.handlers import TimedRotatingFileHandler, WatchedFileHandler
 import uvloop
 
 from aiohttp import ClientSession, log, web, WSMessage, WSMsgType
-from aioredis import create_redis
+from aioredis import create_redis_pool
 
 from dotenv import load_dotenv
 load_dotenv()
 
 from price_cron import currency_list # Supported currencies
 from util import Util
+from account_distribution import PASAApi
+from json_rpc import PascJsonRpc
 
 # Use uvloop
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -31,6 +33,8 @@ parser.add_argument('--path', type=str, help='(Optional) Path to run application
 parser.add_argument('-p', '--port', type=int, help='Port to listen on', default=4443)
 parser.add_argument('--log-file', type=str, help='Log file location', default='blaise_server.log')
 options = parser.parse_args()
+
+pasa_api = PASAApi(PascJsonRpc())
 
 try:
     listen_host = str(ipaddress.ip_address(options.host))
@@ -275,6 +279,8 @@ async def http_api(r: web.Request):
             return web.HTTPBadRequest(reason="Bad request")
         elif request_json['action'] == 'price_data':
             return web.json_response({'price':await r.app['rdata'].hget("prices", "coingecko:pasc-usd")})
+        elif request_json['action'] == 'borrow_account':
+            return await pasa_api.borrow_account(r)
         return web.HTTPBadRequest(reason="Bad request")
     except Exception:
         return web.HTTPBadRequest(reason="Bad request")
@@ -342,8 +348,8 @@ async def init_app():
     async def open_redis(app):
         """Open redis connections"""
         log.server_logger.info("Opening redis connections")
-        app['rdata'] = await create_redis(('localhost', 6379),
-                                                db=2, encoding='utf-8')
+        app['rdata'] = await create_redis_pool(('localhost', 6379),
+                                                db=2, encoding='utf-8', minsize=2, maxsize=50)
         app['clients'] = {} # Keep track of connected clients
         app['last_msg'] = {} # Last time a client has sent a message
         app['active_messages'] = set() # Avoid duplicate messages from being processes simultaneously

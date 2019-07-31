@@ -3,6 +3,7 @@ aiohttp
 aioredis
 python-dotenv
 uvloop
+base58
 # Price cron
 redis
 requests
