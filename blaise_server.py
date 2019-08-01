@@ -393,14 +393,20 @@ async def check_and_send_operations(app, operation_list):
                 # Send it
                 for sub in app['subscriptions'][acct_to_check]:
                     if sub in app['clients']:
-                        await app['clients'][sub].send_str(json.dumps(op))
+                        try:
+                            await app['clients'][sub].send_str(json.dumps(op))
+                        except Exception:
+                            pass
             acct_to_check = int(op['receivers'][0]['account'])
             log.server_logger.info(f"checking if {acct_to_check} is subscribed from receivers")
             if app['subscriptions'].get(acct_to_check):
                 # Send it
                 for sub in app['subscriptions'][acct_to_check]:
                     if sub in app['clients']:
-                        await app['clients'][sub].send_str(json.dumps(op))
+                        try:
+                            await app['clients'][sub].send_str(json.dumps(op))
+                        except Exception:
+                            pass
 
 async def push_new_operations_task(app):
     """Push new operations to connected clients"""
