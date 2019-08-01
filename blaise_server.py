@@ -415,6 +415,7 @@ async def push_new_operations_task(app):
                 block_count = await jrpc_client.getblockcount()
                 log.server_logger.info(f"Received block_count {block_count}")
                 if block_count is not None:
+                    block_count -= 1 # Check blockcount - 1
                     # See if we already checked this block
                     last_checked_block = await redis.get('last_checked_block')
                     should_check = True
