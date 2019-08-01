@@ -3,26 +3,27 @@ import argparse
 import asyncio
 import ipaddress
 import json
+import logging
 import os
 import sys
-import logging
-import uuid
 import time
+import uuid
 from logging.handlers import TimedRotatingFileHandler, WatchedFileHandler
+from threading import active_count
 
 import uvloop
-
-from aiohttp import ClientSession, log, web, WSMessage, WSMsgType
-from aioredis import create_redis_pool, Redis
-
+from aiohttp import ClientSession, WSMessage, WSMsgType, log, web
+from aioredis import Redis, create_redis_pool
 from dotenv import load_dotenv
-load_dotenv()
 
-from price_cron import currency_list # Supported currencies
-from util import Util
 from account_distribution import PASAApi
 from json_rpc import PascJsonRpc
+from price_cron import currency_list  # Supported currencies
 from settings import PASA_PRICE
+from util import Util
+
+load_dotenv()
+
 
 # Use uvloop
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -93,8 +94,10 @@ async def ws_reconnect(ws : web.WebSocketResponse, r : web.Response, account : i
     log.server_logger.info('reconnecting;' + util.get_request_ip(r) + ';' + ws.id)
 
     if account is not None and account in r.app['subscriptions']:
+        log.server_logger.info(f"subscribing account {account}")
         r.app['subscriptions'][account].add(ws.id)
     elif account is not None:
+        log.server_logger.info(f"subscribing account {account}")
         r.app['subscriptions'][account] = set()
         r.app['subscriptions'][account].add(ws.id)
     r.app['cur_prefs'][ws.id] = await r.app['rdata'].hget(ws.id, "currency")
@@ -116,9 +119,11 @@ async def ws_connect(ws : web.WebSocketResponse, r : web.Response, account : int
     log.server_logger.info('subscribing;%s;%s', util.get_request_ip(r), ws.id)
 
     if account is not None and account in r.app['subscriptions']:
+        log.server_logger.info(f"subscribing account {account}")
         r.app['subscriptions'][account].add(ws.id)
         await r.app['rdata'].hset(ws.id, "account", json.dumps([account]))
     elif account is not None:
+        log.server_logger.info(f"subscribing account {account}")
         r.app['subscriptions'][account] = set()
         r.app['subscriptions'][account].add(ws.id)
         await r.app['rdata'].hset(ws.id, "account", json.dumps([account]))
@@ -499,7 +504,7 @@ def main():
     # For PASA Purchases
     pasa_task = asyncio.get_event_loop().create_task(check_borrowed_pasa(app))
     # For new operation pushes/push notifications
-    newop_task = asyncio.get_event_loop().create_task(push_new_operations_task)
+    newop_task = asyncio.get_event_loop().create_task(push_new_operations_task(app))
 
     # Main program
     try:
