@@ -386,7 +386,7 @@ async def check_borrowed_pasa(app):
 
 async def check_and_send_operations(app, operation_list):
     for op in operation_list:
-        if len(op['senders'] > 0) and len(op['receivers']) > 0:
+        if len(op['senders']) > 0 and len(op['receivers']) > 0:
             acct_to_check = int(op['senders'][0]['account'])
             log.server_logger.info(f"checking if {acct_to_check} is subscribed from senders")
             if app['subscriptions'].get(acct_to_check):
