@@ -492,6 +492,13 @@ app = asyncio.get_event_loop().run_until_complete(init_app())
 def main():
     """Main application loop"""
 
+     # Periodic price job
+    price_task = asyncio.get_event_loop().create_task(send_prices(app))
+    # For PASA Purchases
+    pasa_task = asyncio.get_event_loop().create_task(check_borrowed_pasa(app))
+    # For new operation pushes/push notifications
+    newop_task = asyncio.get_event_loop().create_task(push_new_operations_task(app))
+
     # Start web/ws server
     async def start():
         runner = web.AppRunner(app)
@@ -506,13 +513,6 @@ def main():
         await app.shutdown()
 
     asyncio.get_event_loop().run_until_complete(start())
-
-     # Periodic price job
-    price_task = asyncio.get_event_loop().create_task(send_prices(app))
-    # For PASA Purchases
-    pasa_task = asyncio.get_event_loop().create_task(check_borrowed_pasa(app))
-    # For new operation pushes/push notifications
-    newop_task = asyncio.get_event_loop().create_task(push_new_operations_task(app))
 
     # Main program
     try:
