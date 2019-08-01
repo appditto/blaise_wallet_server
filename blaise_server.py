@@ -383,12 +383,14 @@ async def check_and_send_operations(app, operation_list):
     for op in operation_list:
         if len(op['senders'] > 0) and len(op['receivers']) > 0:
             acct_to_check = int(op['senders'][0]['account'])
+            log.server_logger.info(f"checking if {acct_to_check} is subscribed from senders")
             if app['subscriptions'].get(acct_to_check):
                 # Send it
                 for sub in app['subscriptions'][acct_to_check]:
                     if sub in app['clients']:
                         await app['clients'][sub].send_str(json.dumps(op))
             acct_to_check = int(op['receivers'][0]['account'])
+            log.server_logger.info(f"checking if {acct_to_check} is subscribed from receivers")
             if app['subscriptions'].get(acct_to_check):
                 # Send it
                 for sub in app['subscriptions'][acct_to_check]:
@@ -401,10 +403,12 @@ async def push_new_operations_task(app):
         try:
             # Only do this if clients are connected
             if len(app['subscriptions']) > 0:
+                log.server_logger.info("Checking new operations")
                 # Get confirmed operations
                 # Get last block count
                 redis: Redis = app['rdata']
                 block_count = await jrpc_client.getblockcount()
+                log.server_logger.info(f"Received block_count {block_count}")
                 if block_count is not None:
                     # See if we already checked this block
                     last_checked_block = await redis.get('last_checked_block')
@@ -418,10 +422,12 @@ async def push_new_operations_task(app):
                     # Iterate block operations, and push them to connected clients if applicable
                     if should_check:
                         block_operations = await jrpc_client.getblockoperations(block_count)
+                        log.server_logger.info(f"Got {len(block_operations)} operations for block {block_count}")
                         if block_operations is not None:
                             await check_and_send_operations(app, block_operations)
                 # Also check pending operations
                 pendings = await jrpc_client.getpendings()
+                log.server_logger.info(f"Got {len(pendings)} pending operations")
                 if pendings is not None:
                     await check_and_send_operations(app, pendings)
         except Exception:
