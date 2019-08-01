@@ -430,6 +430,7 @@ async def push_new_operations_task(app):
                         block_operations = await jrpc_client.getblockoperations(block_count)
                         log.server_logger.info(f"Got {len(block_operations)} operations for block {block_count}")
                         if block_operations is not None:
+                            await redis.set('last_checked_block', str(block_count), expire=1000)
                             await check_and_send_operations(app, block_operations)
                 # Also check pending operations
                 pendings = await jrpc_client.getpendings()
