@@ -347,36 +347,37 @@ async def send_prices(app):
             await asyncio.sleep(60)
 
 async def check_borrowed_pasa(app):
-    try:
-        # Get list of PASAs which are borrowed
-        redis: Redis = app['rdata']
-        match = 'borrowedpasa_*'
-        cur = b'0'
-        pasa_list = []
-        while cur:
-            cur, keys = await redis.scan(cur, match=match)
-            for key in keys:
-                try:
-                    pasa_list.append(json.loads(await redis.get(key)))
-                except Exception:
-                    pass
-        # Check each borrowed account to see if it has a balance >= threshold
-        for bpasa in pasa_list:
-            if bpasa['paid']:
-                await pasa_api.transfer_account(redis, int(bpasa['pasa']))
-                continue
-            acct = await jrpc_client.getaccount(int(bpasa['pasa']))
-            if acct is None:
-                continue
-            elif float(acct['balance']) >= float(bpasa['price']):
-                # Account is sold, transfer the funds
-                await pasa_api.send_funds(redis, bpasa)
-                # Change public key
-                await pasa_api.transfer_account(redis, int(bpasa['pasa']))
-    except Exception:
-        log.server_logger.exception("exception checking borrowed PASA")
-    finally:
-        await asyncio.sleep(60)
+    while True:
+        try:
+            # Get list of PASAs which are borrowed
+            redis: Redis = app['rdata']
+            match = 'borrowedpasa_*'
+            cur = b'0'
+            pasa_list = []
+            while cur:
+                cur, keys = await redis.scan(cur, match=match)
+                for key in keys:
+                    try:
+                        pasa_list.append(json.loads(await redis.get(key)))
+                    except Exception:
+                        pass
+            # Check each borrowed account to see if it has a balance >= threshold
+            for bpasa in pasa_list:
+                if bpasa['paid']:
+                    await pasa_api.transfer_account(redis, int(bpasa['pasa']))
+                    continue
+                acct = await jrpc_client.getaccount(int(bpasa['pasa']))
+                if acct is None:
+                    continue
+                elif float(acct['balance']) >= float(bpasa['price']):
+                    # Account is sold, transfer the funds
+                    await pasa_api.send_funds(redis, bpasa)
+                    # Change public key
+                    await pasa_api.transfer_account(redis, int(bpasa['pasa']))
+        except Exception:
+            log.server_logger.exception("exception checking borrowed PASA")
+        finally:
+            await asyncio.sleep(60)
 
 async def check_and_send_operations(app, operation_list):
     for op in operation_list:
@@ -396,36 +397,37 @@ async def check_and_send_operations(app, operation_list):
 
 async def push_new_operations_task(app):
     """Push new operations to connected clients"""
-    try:
-        # Only do this if clients are connected
-        if len(app['subscriptions']) > 0:
-            # Get confirmed operations
-            # Get last block count
-            redis: Redis = app['rdata']
-            block_count = await jrpc_client.getblockcount()
-            if block_count is not None:
-                # See if we already checked this block
-                last_checked_block = await redis.get('last_checked_block')
-                should_check = True
-                if last_checked_block is None:
-                    await redis.set('last_checked_block', str(block_count), expire=1000)
-                else:
-                    last_checked_block = int(last_checked_block)
-                    if last_checked_block == block_count:
-                        should_check = False
-                # Iterate block operations, and push them to connected clients if applicable
-                if should_check:
-                    block_operations = await jrpc_client.getblockoperations(block_count)
-                    if block_operations is not None:
-                        await check_and_send_operations(app, block_operations)
-            # Also check pending operations
-            pendings = await jrpc_client.getpendings()
-            if pendings is not None:
-                await check_and_send_operations(app, pendings)
-    except Exception:
-        pass
-    finally:
-        await asyncio.sleep(30)
+    while True:
+        try:
+            # Only do this if clients are connected
+            if len(app['subscriptions']) > 0:
+                # Get confirmed operations
+                # Get last block count
+                redis: Redis = app['rdata']
+                block_count = await jrpc_client.getblockcount()
+                if block_count is not None:
+                    # See if we already checked this block
+                    last_checked_block = await redis.get('last_checked_block')
+                    should_check = True
+                    if last_checked_block is None:
+                        await redis.set('last_checked_block', str(block_count), expire=1000)
+                    else:
+                        last_checked_block = int(last_checked_block)
+                        if last_checked_block == block_count:
+                            should_check = False
+                    # Iterate block operations, and push them to connected clients if applicable
+                    if should_check:
+                        block_operations = await jrpc_client.getblockoperations(block_count)
+                        if block_operations is not None:
+                            await check_and_send_operations(app, block_operations)
+                # Also check pending operations
+                pendings = await jrpc_client.getpendings()
+                if pendings is not None:
+                    await check_and_send_operations(app, pendings)
+        except Exception:
+            pass
+        finally:
+            await asyncio.sleep(30)
 
 async def init_app():
     """ Initialize the main application instance and return it"""
@@ -471,13 +473,6 @@ app = asyncio.get_event_loop().run_until_complete(init_app())
 def main():
     """Main application loop"""
 
-    # Periodic price job
-    price_task = asyncio.get_event_loop().create_task(send_prices(app))
-    # For PASA Purchases
-    pasa_task = asyncio.get_event_loop().create_task(check_borrowed_pasa(app))
-    # For new operation pushes/push notifications
-    newop_task = asyncio.get_event_loop().create_task(push_new_operations_task)
-
     # Start web/ws server
     async def start():
         runner = web.AppRunner(app)
@@ -492,6 +487,13 @@ def main():
         await app.shutdown()
 
     asyncio.get_event_loop().run_until_complete(start())
+
+     # Periodic price job
+    price_task = asyncio.get_event_loop().create_task(send_prices(app))
+    # For PASA Purchases
+    pasa_task = asyncio.get_event_loop().create_task(check_borrowed_pasa(app))
+    # For new operation pushes/push notifications
+    newop_task = asyncio.get_event_loop().create_task(push_new_operations_task)
 
     # Main program
     try:
