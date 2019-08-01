@@ -365,7 +365,7 @@ async def check_borrowed_pasa(app):
             if bpasa['paid']:
                 await pasa_api.transfer_account(redis, int(bpasa['pasa']))
                 continue
-            acct = jrpc_client.getaccount(int(bpasa['pasa']))
+            acct = await jrpc_client.getaccount(int(bpasa['pasa']))
             if acct is None:
                 continue
             elif float(acct['balance']) >= float(bpasa['price']):
@@ -377,6 +377,55 @@ async def check_borrowed_pasa(app):
         log.server_logger.exception("exception checking borrowed PASA")
     finally:
         await asyncio.sleep(60)
+
+async def check_and_send_operations(app, operation_list):
+    for op in operation_list:
+        if len(op['senders'] > 0) and len(op['receivers']) > 0:
+            acct_to_check = int(op['senders'][0]['account'])
+            if app['subscriptions'].get(acct_to_check):
+                # Send it
+                for sub in app['subscriptions'][acct_to_check]:
+                    if sub in app['clients']:
+                        await app['clients'][sub].send_str(json.dumps(op))
+            acct_to_check = int(op['receivers'][0]['account'])
+            if app['subscriptions'].get(acct_to_check):
+                # Send it
+                for sub in app['subscriptions'][acct_to_check]:
+                    if sub in app['clients']:
+                        await app['clients'][sub].send_str(json.dumps(op))
+
+async def push_new_operations_task(app):
+    """Push new operations to connected clients"""
+    try:
+        # Only do this if clients are connected
+        if len(app['subscriptions']) > 0:
+            # Get confirmed operations
+            # Get last block count
+            redis: Redis = app['rdata']
+            block_count = await jrpc_client.getblockcount()
+            if block_count is not None:
+                # See if we already checked this block
+                last_checked_block = await redis.get('last_checked_block')
+                should_check = True
+                if last_checked_block is None:
+                    await redis.set('last_checked_block', str(block_count), expire=1000)
+                else:
+                    last_checked_block = int(last_checked_block)
+                    if last_checked_block == block_count:
+                        should_check = False
+                # Iterate block operations, and push them to connected clients if applicable
+                if should_check:
+                    block_operations = await jrpc_client.getblockoperations(block_count)
+                    if block_operations is not None:
+                        await check_and_send_operations(app, block_operations)
+            # Also check pending operations
+            pendings = await jrpc_client.getpendings()
+            if pendings is not None:
+                await check_and_send_operations(app, pendings)
+    except Exception:
+        pass
+    finally:
+        await asyncio.sleep(30)
 
 async def init_app():
     """ Initialize the main application instance and return it"""
@@ -394,6 +443,7 @@ async def init_app():
         app['last_msg'] = {} # Last time a client has sent a message
         app['active_messages'] = set() # Avoid duplicate messages from being processes simultaneously
         app['cur_prefs'] = {} # Client currency preferences
+        app['subscriptions'] = {} # Store subscription UUIDs, this is used for targeting new operation pushes
 
     # Setup logger
     if debug_mode:
@@ -425,6 +475,8 @@ def main():
     price_task = asyncio.get_event_loop().create_task(send_prices(app))
     # For PASA Purchases
     pasa_task = asyncio.get_event_loop().create_task(check_borrowed_pasa(app))
+    # For new operation pushes/push notifications
+    newop_task = asyncio.get_event_loop().create_task(push_new_operations_task)
 
     # Start web/ws server
     async def start():

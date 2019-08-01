@@ -6,14 +6,15 @@ class PascJsonRpc():
         self.node_url = node_url
         self.req_id = 1
 
-    async def jsonrpc_request(self, method: str, params: dict, timeout: int = 30) -> dict:
+    async def jsonrpc_request(self, method: str, params: dict = None, timeout: int = 30) -> dict:
         try:
             request_json = {
                 "jsonrpc": "2.0",
                 "method":method,
-                "params": params,
                 "id": self.req_id
             }
+            if params is not None:
+                request_json['params'] = params
             self.req_id += 1
             async with ClientSession() as session:
                 async with session.post(f'{self.node_url}', json=request_json, timeout=timeout) as resp:
@@ -77,5 +78,35 @@ class PascJsonRpc():
         if response is None or 'result' not in response or 'ophash' not in response['result']:
             if response is not None:
                 log.server_logger.error(f'changeaccountinfo: received invalid jsonrpc response {json.dumps(response)}')
+            return None
+        return response['result']
+
+    async def getblockcount(self):
+        method = 'getblockcount'
+        response = await self.jsonrpc_request(method)
+        if response is None or 'result' not in response or not isinstance(response['result'], int):
+            if response is not None:
+                log.server_logger.error(f'getblockcount: received invalid jsonrpc response {json.dumps(response)}')
+            return None
+        return response['result']
+
+    async def getblockoperations(self, block: int):
+        method = 'getblockoperations'
+        params = {
+            'block': block
+        }
+        response = await self.jsonrpc_request(method, params)
+        if response is None or 'result' not in response or not isinstance(response['result'], list):
+            if response is not None:
+                log.server_logger.error(f'getblockoperations: received invalid jsonrpc response {json.dumps(response)}')
+            return None
+        return response['result']
+
+    async def getpendings(self):
+        method = 'getpendings'
+        response = await self.jsonrpc_request(method)
+        if response is None or 'result' not in response or not isinstance(response['result'], list):
+            if response is not None:
+                log.server_logger.error(f'getpendings: received invalid jsonrpc response {json.dumps(response)}')
             return None
         return response['result']
