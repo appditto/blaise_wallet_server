@@ -8,14 +8,15 @@ import os
 import sys
 import time
 import uuid
-import aiofcm
 from logging.handlers import TimedRotatingFileHandler, WatchedFileHandler
 from threading import active_count
 
+import aiofcm
 import uvloop
 from aiohttp import ClientSession, WSMessage, WSMsgType, log, web
 from aioredis import Redis, create_redis_pool
 from dotenv import load_dotenv
+from requests.api import request
 
 from account_distribution import PASAApi
 from json_rpc import PascJsonRpc
@@ -89,13 +90,17 @@ rpc_whitelist = [
 ws_whitelist = [
     'account_subscribe',
     'fcm_update',
-    'fcm_update_bulk'
+    'fcm_update_bulk',
+    'fcm_delete_account'
 ]
 
 # Push notifications
 
 async def delete_fcm_token(account: int, token : str, r : web.Request):
     await r.app['rdata'].delete(f'fcm_{token}')
+    await delete_fcm_account(account, token, r)
+
+async def delete_fcm_account(account: int, token: str, r: web.Request):
     acct_list = await r.app['rdata'].get(str(account))
     if acct_list is not None:
         acct_list = json.loads(acct_list.replace('\'', '"'))
@@ -348,6 +353,9 @@ async def handle_user_message(r : web.Request, message : str, ws : web.WebSocket
                     else:
                         for account in request_json['accounts']:
                             await delete_fcm_token(account, request_json['fcm_token'], r)
+            elif request_json['action'] == 'fcm_delete_account':
+                if 'fcm_token' in request_json and 'account' in request_json:
+                    await delete_fcm_account(request_json['account'], request_json['fcm_token'], r)             
     except Exception as e:
         log.server_logger.exception('uncaught error;%s;%s', util.get_request_ip(r), uid)
         ret = json.dumps({
