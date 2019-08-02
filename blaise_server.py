@@ -100,15 +100,22 @@ async def delete_fcm_token(account: int, token : str, r : web.Request):
     await r.app['rdata'].delete(f'fcm_{token}')
     await delete_fcm_account(account, token, r)
 
-async def delete_fcm_account(account: int, token: str, r: web.Request):
+async def delete_fcm_account(account: int, token: str, r: web.Request, explicit: bool = False):
     acct_list = await r.app['rdata'].get(str(account))
     if acct_list is not None:
         acct_list = json.loads(acct_list.replace('\'', '"'))
         acct_list['data'].remove(token)
         await r.app['rdata'].set(str(account), json.dumps(acct_list))
+        # Flag explicit deletes to prevent them from coming back if transferred account, etc.
+        if explicit:
+            await r.app['rdata'].set(f'explicitfcmdel_{str(account)}', 'true', expire=1000)
 
 async def update_fcm_token_for_account(account : int, token : str, r : web.Request):
     """Store device FCM registration tokens in redis"""
+    # Dont add explicit deletes
+    ed = await r.app['rdata'].get(f'explicitfcmdel_{str(account)}')
+    if ed is not None:
+        return
     redis: Redis = r.app['rdata']
     # We keep a list of FCM tokens and accounts, because of multiple accounts
     token_account_list = await redis.get(f'fcm_{token}')
@@ -355,7 +362,7 @@ async def handle_user_message(r : web.Request, message : str, ws : web.WebSocket
                             await delete_fcm_token(account, request_json['fcm_token'], r)
             elif request_json['action'] == 'fcm_delete_account':
                 if 'fcm_token' in request_json and 'account' in request_json:
-                    await delete_fcm_account(request_json['account'], request_json['fcm_token'], r)             
+                    await delete_fcm_account(request_json['account'], request_json['fcm_token'], r, explicit=True)             
     except Exception as e:
         log.server_logger.exception('uncaught error;%s;%s', util.get_request_ip(r), uid)
         ret = json.dumps({
