@@ -88,13 +88,19 @@ rpc_whitelist = [
 # Whitelisting proprietary WS actions
 ws_whitelist = [
     'account_subscribe',
-    'fcm_update'
+    'fcm_update',
+    'fcm_update_bulk'
 ]
 
 # Push notifications
 
-async def delete_fcm_token(token : str, r : web.Request):
+async def delete_fcm_token(account: int, token : str, r : web.Request):
     await r.app['rdata'].delete(f'fcm_{token}')
+    acct_list = await r.app['rdata'].get(str(account))
+    if acct_list is not None:
+        acct_list = json.loads(acct_list.replace('\'', '"'))
+        acct_list['data'].remove(token)
+        await r.app['rdata'].set(str(account), json.dumps(acct_list))
 
 async def update_fcm_token_for_account(account : int, token : str, r : web.Request):
     """Store device FCM registration tokens in redis"""
@@ -302,7 +308,7 @@ async def handle_user_message(r : web.Request, message : str, ws : web.WebSocket
                             if request_json['notification_enabled']:
                                 await update_fcm_token_for_account(account, request_json['fcm_token'], r)
                             else:
-                                await delete_fcm_token(request_json['fcm_token'], r)
+                                await delete_fcm_token(account, request_json['fcm_token'], r)
                     except Exception as e:
                         log.server_logger.error('reconnect error; %s; %s; %s', str(e), address, uid)
                         reply = {'error': 'reconnect error', 'detail': str(e)}
@@ -322,7 +328,7 @@ async def handle_user_message(r : web.Request, message : str, ws : web.WebSocket
                             if request_json['notification_enabled']:
                                 await update_fcm_token_for_account(account, request_json['fcm_token'], r)
                             else:
-                                await delete_fcm_token(request_json['fcm_token'], r)
+                                await delete_fcm_token(account, request_json['fcm_token'], r)
                     except Exception as e:
                         log.server_logger.error('subscribe error;%s;%s;%s', str(e), address, uid)
                         reply = {'error': 'subscribe error', 'detail': str(e)}
@@ -333,7 +339,15 @@ async def handle_user_message(r : web.Request, message : str, ws : web.WebSocket
                     if request_json['enabled']:
                         await update_fcm_token_for_account(request_json['account'], request_json['fcm_token'], r)
                     else:
-                        await delete_fcm_token(request_json['fcm_token'], r)
+                        await delete_fcm_token(request_json['account'], request_json['fcm_token'], r)
+            elif request_json['action'] == 'fcm_update_bulk':
+                if 'fcm_token' in request_json and 'accounts' in request_json and 'enabled' in request_json:
+                    if request_json['enabled']:
+                        for account in request_json['accounts']:
+                            await update_fcm_token_for_account(account, request_json['fcm_token'], r)
+                    else:
+                        for account in request_json['accounts']:
+                            await delete_fcm_token(account, request_json['fcm_token'], r)
     except Exception as e:
         log.server_logger.exception('uncaught error;%s;%s', util.get_request_ip(r), uid)
         ret = json.dumps({
