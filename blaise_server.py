@@ -394,6 +394,7 @@ async def check_and_send_operations(app, operation_list):
                 for sub in app['subscriptions'][acct_to_check]:
                     if sub in app['clients']:
                         try:
+                            log.server_logger.info(f"Sending {json.dumps(op)}")
                             await app['clients'][sub].send_str(json.dumps(op))
                         except Exception:
                             pass
@@ -404,6 +405,7 @@ async def check_and_send_operations(app, operation_list):
                 for sub in app['subscriptions'][acct_to_check]:
                     if sub in app['clients']:
                         try:
+                            log.server_logger.info(f"Sending {json.dumps(op)}")
                             await app['clients'][sub].send_str(json.dumps(op))
                         except Exception:
                             pass
