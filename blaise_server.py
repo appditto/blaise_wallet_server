@@ -559,11 +559,11 @@ async def push_new_operations_task(app):
                         if block_operations is not None:
                             await redis.set('last_checked_block', str(block_count), expire=1000)
                             await check_and_send_operations(app, block_operations)
-                # Also check pending operations
-                pendings = await jrpc_client.getpendings()
-                log.server_logger.debug(f"Got {len(pendings)} pending operations")
-                if pendings is not None:
-                    await check_and_send_operations(app, pendings)
+            # Also check pending operations, regarldess of whether clients are connected (due to push notificaions)
+            pendings = await jrpc_client.getpendings()
+            log.server_logger.debug(f"Got {len(pendings)} pending operations")
+            if pendings is not None:
+                await check_and_send_operations(app, pendings)
         except Exception:
             pass
         finally:
