@@ -162,7 +162,7 @@ async def check_and_do_push_notification(redis: Redis, op):
     if op_pushed is not None:
         return
     else:
-        await redis.set(f'pncache_{op["ophash"]}', 'tru', expire=1000)
+        await redis.set(f'pncache_{op["ophash"]}', 'tru', expire=10000)
     # Check tokens
     fcm_tokens = await get_fcm_tokens(op['receivers'][0]['account'], redis)
     notification_title = f"Received {abs(float(op['receivers'][0]['amount']))} PASCAL"
