@@ -8,6 +8,7 @@ import os
 import sys
 import time
 import uuid
+import aiofcm
 from logging.handlers import TimedRotatingFileHandler, WatchedFileHandler
 from threading import active_count
 
@@ -63,6 +64,10 @@ pasa_api = PASAApi(jrpc_client)
 
 # Local constants
 
+fcm_api_key = os.getenv('FCM_API_KEY', None)
+fcm_sender_id = os.getenv('FCM_SENDER_ID', None)
+fcm_client = aiofcm.FCM(fcm_sender_id, fcm_api_key) if fcm_api_key is not None and fcm_sender_id is not None else None
+
 # Whitelisting specific json-rpc commands
 rpc_whitelist = [
     'getaccount',
@@ -82,13 +87,100 @@ rpc_whitelist = [
 
 # Whitelisting proprietary WS actions
 ws_whitelist = [
-    'account_subscribe'
+    'account_subscribe',
+    'fcm_update'
 ]
+
+# Push notifications
+
+async def delete_fcm_token(token : str, r : web.Request):
+    await r.app['rdata'].delete(f'fcm_{token}')
+
+async def update_fcm_token_for_account(account : int, token : str, r : web.Request):
+    """Store device FCM registration tokens in redis"""
+    redis: Redis = r.app['rdata']
+    # We keep a list of FCM tokens and accounts, because of multiple accounts
+    token_account_list = await redis.get(f'fcm_{token}')
+    if token_account_list is None:
+        token_account_list = [account]
+        await redis.set(f'fcm_{token}', json.dumps(token_account_list), expire=2592000)
+    else:
+        token_account_list = json.loads(token_account_list)
+        if account not in token_account_list:
+            token_account_list.append(account)
+            await redis.set(f'fcm_{token}', json.dumps(token_account_list), expire=2592000)
+    # Keep a list of tokens associated with this account, in case of multiple devices
+    cur_list = await redis.get(str(account))
+    if cur_list is not None:
+        cur_list = json.loads(cur_list.replace('\'', '"'))
+    else:
+        cur_list = {}
+    if 'data' not in cur_list:
+        cur_list['data'] = []
+    if token not in cur_list['data']:
+        cur_list['data'].append(token)
+    await redis.set(str(account), json.dumps(cur_list), expire=2592000)
+
+async def get_fcm_tokens(account : int, redis : Redis) -> list:
+    """Return list of FCM tokens that belong to this account"""
+    tokens = await redis.get(str(account))
+    if tokens is None:
+        return []
+    tokens = json.loads(tokens.replace('\'', '"'))
+    # Rebuild the list for this account removing tokens that dont belong anymore
+    new_token_list = {}
+    new_token_list['data'] = []
+    if 'data' not in tokens:
+        return []
+    for t in tokens['data']:
+        account_list = await redis.get(f'fcm_{t}')
+        if account_list is None:
+            continue
+        else:
+            account_list = json.loads(account_list)
+        if account not in account_list:
+            continue
+        new_token_list['data'].append(t)
+    await redis.set(str(account), json.dumps(new_token_list))
+    return new_token_list['data']
+
+async def check_and_do_push_notification(redis: Redis, op):
+    # Only if configured
+    if fcm_client is None:
+        return
+    # Only do pending operations, and only to the receiver
+    if op['maturation'] is not None or 'receivers' not in op or not op['receivers']:
+        return
+    # Check if we already pushed this op
+    op_pushed = await redis.get(f'pncache_{op["ophash"]}')
+    if op_pushed is not None:
+        return
+    else:
+        await redis.set(f'pncache_{op["ophash"]}', 'tru', expire=1000)
+    # Check tokens
+    fcm_tokens = await get_fcm_tokens(op['receivers'][0]['account'], redis)
+    notification_title = f"Received {abs(float(op['receivers'][0]['amount']))} PASCAL"
+    notification_body = f"Open Blaise to view this transaction."
+    for t in fcm_tokens:
+        message = aiofcm.Message(
+            device_token = t,
+            notification = {
+                "title":notification_title,
+                "body":notification_body,
+                "sound":"default",
+                "tag":str(op['receivers'][0]['account'])
+            },
+            data = {
+                "click_action": "FLUTTER_NOTIFICATION_CLICK",
+                "account": str(op['receivers'][0]['account'])
+            },
+            priority=aiofcm.PRIORITY_HIGH
+        )
+        await fcm_client.send_message(message)
 
 # APIs
 
 # Websocket
-
 async def ws_reconnect(ws : web.WebSocketResponse, r : web.Response, account : int):
     """When a websocket connection sends a subscribe request, do this reconnection step"""
     log.server_logger.info('reconnecting;' + util.get_request_ip(r) + ';' + ws.id)
@@ -205,6 +297,12 @@ async def handle_user_message(r : web.Request, message : str, ws : web.WebSocket
                             account = request_json['account']
 
                         await ws_reconnect(ws, r, account)
+
+                        if 'fcm_token' in request_json and account is not None:
+                            if request_json['notification_enabled']:
+                                await update_fcm_token_for_account(account, request_json['fcm_token'], r)
+                            else:
+                                await delete_fcm_token(request_json['fcm_token'], r)
                     except Exception as e:
                         log.server_logger.error('reconnect error; %s; %s; %s', str(e), address, uid)
                         reply = {'error': 'reconnect error', 'detail': str(e)}
@@ -219,10 +317,23 @@ async def handle_user_message(r : web.Request, message : str, ws : web.WebSocket
                             currency = 'usd'
                         account = request_json['account'] if 'account' in request_json else None
                         await ws_connect(ws, r, account, currency)
+
+                        if 'fcm_token' in request_json and account is not None:
+                            if request_json['notification_enabled']:
+                                await update_fcm_token_for_account(account, request_json['fcm_token'], r)
+                            else:
+                                await delete_fcm_token(request_json['fcm_token'], r)
                     except Exception as e:
                         log.server_logger.error('subscribe error;%s;%s;%s', str(e), address, uid)
                         reply = {'error': 'subscribe error', 'detail': str(e)}
                         ret = json.dumps(reply)
+            elif request_json['action'] == "fcm_update":
+                # Updating FCM token
+                if 'fcm_token' in request_json and 'account' in request_json and 'enabled' in request_json:
+                    if request_json['enabled']:
+                        await update_fcm_token_for_account(request_json['account'], request_json['fcm_token'], r)
+                    else:
+                        await delete_fcm_token(request_json['fcm_token'], r)
     except Exception as e:
         log.server_logger.exception('uncaught error;%s;%s', util.get_request_ip(r), uid)
         ret = json.dumps({
@@ -386,26 +497,34 @@ async def check_borrowed_pasa(app):
 
 async def check_and_send_operations(app, operation_list):
     for op in operation_list:
+        # Don't send it twice
+        if 'ophash' in op:
+            redis: Redis = app['rdata']
+            sent_op = await redis.get(f'sentoperation_{op["ophash"]}')
+            if sent_op is not None:
+                continue
+        # Check push notification
+        await check_and_do_push_notification(app['rdata'], op)
         if len(op['senders']) > 0 and len(op['receivers']) > 0:
             acct_to_check = int(op['senders'][0]['account'])
-            log.server_logger.info(f"checking if {acct_to_check} is subscribed from senders")
+            log.server_logger.debug(f"checking if {acct_to_check} is subscribed from senders")
             if app['subscriptions'].get(acct_to_check):
                 # Send it
                 for sub in app['subscriptions'][acct_to_check]:
                     if sub in app['clients']:
                         try:
-                            log.server_logger.info(f"Sending {json.dumps(op)}")
+                            log.server_logger.debug(f"Sending {json.dumps(op)}")
                             await app['clients'][sub].send_str(json.dumps(op))
                         except Exception:
                             pass
             acct_to_check = int(op['receivers'][0]['account'])
-            log.server_logger.info(f"checking if {acct_to_check} is subscribed from receivers")
+            log.server_logger.debug(f"checking if {acct_to_check} is subscribed from receivers")
             if app['subscriptions'].get(acct_to_check):
                 # Send it
                 for sub in app['subscriptions'][acct_to_check]:
                     if sub in app['clients']:
                         try:
-                            log.server_logger.info(f"Sending {json.dumps(op)}")
+                            log.server_logger.debug(f"Sending {json.dumps(op)}")
                             await app['clients'][sub].send_str(json.dumps(op))
                         except Exception:
                             pass
@@ -416,12 +535,12 @@ async def push_new_operations_task(app):
         try:
             # Only do this if clients are connected
             if len(app['subscriptions']) > 0:
-                log.server_logger.info("Checking new operations")
+                log.server_logger.debug("Checking new operations")
                 # Get confirmed operations
                 # Get last block count
                 redis: Redis = app['rdata']
                 block_count = await jrpc_client.getblockcount()
-                log.server_logger.info(f"Received block_count {block_count}")
+                log.server_logger.debug(f"Received block_count {block_count}")
                 if block_count is not None:
                     block_count -= 1 # Check blockcount - 1
                     # See if we already checked this block
@@ -436,13 +555,13 @@ async def push_new_operations_task(app):
                     # Iterate block operations, and push them to connected clients if applicable
                     if should_check:
                         block_operations = await jrpc_client.getblockoperations(block_count)
-                        log.server_logger.info(f"Got {len(block_operations)} operations for block {block_count}")
+                        log.server_logger.debug(f"Got {len(block_operations)} operations for block {block_count}")
                         if block_operations is not None:
                             await redis.set('last_checked_block', str(block_count), expire=1000)
                             await check_and_send_operations(app, block_operations)
                 # Also check pending operations
                 pendings = await jrpc_client.getpendings()
-                log.server_logger.info(f"Got {len(pendings)} pending operations")
+                log.server_logger.debug(f"Got {len(pendings)} pending operations")
                 if pendings is not None:
                     await check_and_send_operations(app, pendings)
         except Exception:

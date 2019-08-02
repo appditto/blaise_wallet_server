@@ -6,3 +6,5 @@ RPC_URL (default: http://127.0.0.1:4003)
 SIGNER_ACCOUNT (account used to sign account transfers)
 PUBKEY_B58 (local wallet public key)
 
+FCM_API_KEY ('firebase API key')
+FCM_SENDER_ID (firebase sender)

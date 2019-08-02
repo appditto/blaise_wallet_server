@@ -1,6 +1,7 @@
 # Main server
 aiohttp
 aioredis
+aiofcm
 python-dotenv
 uvloop
 base58
