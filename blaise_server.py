@@ -621,13 +621,14 @@ async def init_app():
     if debug_mode:
         logging.basicConfig(level=logging.DEBUG)
     else:
-        root = logging.getLogger('aiohttp.server')
         logging.basicConfig(level=logging.INFO)
-        handler = WatchedFileHandler(log_file)
-        formatter = logging.Formatter("%(asctime)s;%(levelname)s;%(message)s", "%Y-%m-%d %H:%M:%S %z")
-        handler.setFormatter(formatter)
-        root.addHandler(handler)
-        root.addHandler(TimedRotatingFileHandler(log_file, when="d", interval=1, backupCount=100))        
+    root = logging.getLogger('aiohttp.server')
+    logging.basicConfig(level=logging.INFO)
+    handler = WatchedFileHandler(log_file)
+    formatter = logging.Formatter("%(asctime)s;%(levelname)s;%(message)s", "%Y-%m-%d %H:%M:%S %z")
+    handler.setFormatter(formatter)
+    root.addHandler(handler)
+    root.addHandler(TimedRotatingFileHandler(log_file, when="d", interval=1, backupCount=100))        
 
     app = web.Application()
     app.add_routes([web.get('/', websocket_handler)]) # All WS requests
