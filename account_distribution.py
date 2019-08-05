@@ -151,15 +151,17 @@ class PASAApi():
             return web.json_response(await self.reset_expiry(redis, bpasa))
         # Do findaccounts request
         last_borrowed = await self.get_last_borrowed(redis)
-        accounts = await self.rpc_client.findaccounts(start=await self.get_last_borrowed(redis), b58_pubkey=PUBKEY_B58)
+        accounts = await self.rpc_client.findaccounts(start=last_borrowed, b58_pubkey=PUBKEY_B58)
         if accounts is None:
             log.server_logger.error('findaccounts response failed')
             return web.json_response({'error':'findaccounts response failed'})
         resp = None
         for acct in accounts:
+            if int(acct) == SIGNER_ACCOUNT:
+                continue
             acctnum = acct['account']
             # Skip PASA that is already borrowed
-            if self.pasa_is_borrowed(redis, acctnum):
+            if await self.pasa_is_borrowed(redis, acctnum):
                 continue
             # Initiate a borrow of this pubkey
             log.server_logger.debug(f'{req_json["b58_pubkey"]} is borrowing {acctnum}')
