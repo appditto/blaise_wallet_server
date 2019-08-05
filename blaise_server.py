@@ -435,6 +435,7 @@ async def http_api(r: web.Request):
             return await pasa_api.getborrowed(r)
         return web.HTTPBadRequest(reason="Bad request")
     except Exception:
+        log.server_logger.exception('Exception in http_api')
         return web.HTTPBadRequest(reason="Bad request")
 
 
