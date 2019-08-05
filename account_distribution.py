@@ -18,8 +18,8 @@ class PASAApi():
         """Get index to start in findaccounts request"""
         last_bor = await redis.get("last_borrowed_pasa")
         if last_bor is None:
-            await redis.set("last_borrowed_pasa", str(SIGNER_ACCOUNT))
-            return int(SIGNER_ACCOUNT)
+            await redis.set("last_borrowed_pasa", str(0))
+            return int(0)
         return int(last_bor)
 
     async def set_last_borrowed(self, redis: Redis, pasa: int):
@@ -167,9 +167,9 @@ class PASAApi():
             log.server_logger.debug(f'{req_json["b58_pubkey"]} is borrowing {acctnum}')
             resp = await self.initiate_borrow(redis, req_json['b58_pubkey'], acctnum)
             break
-        if resp is None and len(accounts) < 75 and last_borrowed != SIGNER_ACCOUNT:
+        if resp is None and len(accounts) < 75:
             # Retry, restarting at initial index
-            await self.set_last_borrowed(redis, SIGNER_ACCOUNT)
+            await self.set_last_borrowed(redis, 0)
             return await self.borrow_account(r)
         elif resp is None:
             return web.json_response({'error': 'could not lend any accounts, try again later'})
