@@ -157,9 +157,9 @@ class PASAApi():
             return web.json_response({'error':'findaccounts response failed'})
         resp = None
         for acct in accounts:
-            if int(acct) == SIGNER_ACCOUNT:
-                continue
             acctnum = acct['account']
+            if acctnum == SIGNER_ACCOUNT:
+                continue
             # Skip PASA that is already borrowed
             if await self.pasa_is_borrowed(redis, acctnum):
                 continue
