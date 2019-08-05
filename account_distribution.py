@@ -95,7 +95,7 @@ class PASAApi():
 
     async def getborrowed(self, r: web.Request):
         """Get a borrowed account, if it exists"""
-        req_json = r.json()
+        req_json = await r.json()
         if 'b58_pubkey' not in req_json:
             return web.HTTPBadRequest(reason="Bad request - missing b58_pubkey")
         elif len(req_json['b58_pubkey']) < 80:
@@ -131,7 +131,7 @@ class PASAApi():
             'error': 'failed'
         }
         """
-        req_json = r.json()
+        req_json = await r.json()
         if 'b58_pubkey' not in req_json:
             return web.HTTPBadRequest(reason="Bad request - missing b58_pubkey")
         elif len(req_json['b58_pubkey']) < 80:
