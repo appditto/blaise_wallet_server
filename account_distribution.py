@@ -50,7 +50,8 @@ class PASAApi():
             return None
         bpasa = await self.get_borrowed_pasa(redis, int(pasa))
         if bpasa is not None:
-            return bpasa
+            if not bpasa['paid']:
+                return bpasa
         await redis.delete(f"borrowed_pasapub_{pubkey}")
         return None
 
