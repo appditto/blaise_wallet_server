@@ -56,7 +56,7 @@ class PascJsonRpc():
         params = {
             'sender': sender,
             'target': target,
-            'amount': amount,
+            'amount': amount - fee,
             'fee': fee,
             'payload': payload
         }
