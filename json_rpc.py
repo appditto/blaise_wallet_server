@@ -67,10 +67,11 @@ class PascJsonRpc():
             return None
         return response['result']
 
-    async def changeaccountinfo(self, signer: int, new_b58_pubkey: str, fee: float = 0.0001):
+    async def changeaccountinfo(self, signer: int, target: int, new_b58_pubkey: str, fee: float = 0.0001):
         method = 'changeaccountinfo'
         params = {
             'account_signer': signer,
+            'account_target': target,
             'new_b58_pubkey': new_b58_pubkey,
             'fee': fee
         }

@@ -87,7 +87,7 @@ class PASAApi():
             return None
         bpasa = json.loads(bpasa)
         if bpasa['paid']:
-            resp = await self.rpc_client.changeaccountinfo(SIGNER_ACCOUNT, bpasa['b58_pubkey'])
+            resp = await self.rpc_client.changeaccountinfo(SIGNER_ACCOUNT, bpasa['pasa'], bpasa['b58_pubkey'])
             if resp is not None:
                 log.server_logger.info(f"Transferred account {bpasa['pasa']} to {bpasa['b58_pubkey']}. hash: {resp['ophash']}")
                 # Sale complete
