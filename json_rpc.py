@@ -58,7 +58,8 @@ class PascJsonRpc():
             'target': target,
             'amount': amount - fee,
             'fee': fee,
-            'payload': payload
+            'payload': payload,
+            'payload_method': 'none'
         }
         response = await self.jsonrpc_request(method, params)
         if response is None or 'result' not in response or 'ophash' not in response['result']:
