@@ -122,6 +122,10 @@ class PASAApi():
         # Get the account that is borrowed
         redis: Redis = r.app['rdata']
         bpasa = await self.pubkey_has_borrowed(redis, req_json['b58_pubkey'])
+        if bpasa is not None:
+            expiry = int(bpasa['expiry'])
+            if Util.ms_since_epoch(datetime.datetime.utcnow()) > expiry:
+                bpasa = None
         resp_json = {
             'borrowed_account': bpasa if bpasa is not None else ''
         }
