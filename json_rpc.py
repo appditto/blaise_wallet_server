@@ -112,3 +112,15 @@ class PascJsonRpc():
                 log.server_logger.error(f'getpendings: received invalid jsonrpc response {json.dumps(response)}')
             return None
         return response['result']
+
+    async def findoperation(self, ophash: str):
+        method = 'findoperation'
+        params = {
+            'ophash': ophash
+        }
+        response = await self.jsonrpc_request(method, params)
+        if response is None or 'result' not in response or 'error' in response:
+            if response is not None:
+                log.server_logger.error(f'findoperation: received invalid jsonrpc response {json.dumps(response)}')
+            return None
+        return response['result']

@@ -509,9 +509,19 @@ async def check_borrowed_pasa(app):
                         pass
             # Check each borrowed account to see if it has a balance >= threshold
             for bpasa in pasa_list:
-                if bpasa['paid']:
+                if bpasa['paid'] and not bpasa['transferred']:
                     await pasa_api.transfer_account(redis, int(bpasa['pasa']))
                     continue
+                elif bpasa['transferred']:
+                    op = await jrpc_client.findoperation(bpasa['transfer_ophash'])
+                    if op is None:
+                        await pasa_api.transfer_account(redis, int(bpasa['pasa']))
+                        continue
+                    elif op is not None and op['maturation'] is not None:
+                        await pasa_api.check_and_clear_borrow(bpasa['b58_pubkey'])
+                        continue
+                    else:
+                        continue
                 acct = await jrpc_client.getaccount(int(bpasa['pasa']))
                 if acct is None:
                     continue

@@ -50,10 +50,17 @@ class PASAApi():
             return None
         bpasa = await self.get_borrowed_pasa(redis, int(pasa))
         if bpasa is not None:
-            if not bpasa['paid']:
-                return bpasa
+            return bpasa
         await redis.delete(f"borrowed_pasapub_{pubkey}")
         return None
+
+    async def check_and_clear_borrow(self, redis: Redis, pubkey: str):
+        pasa = await redis.get(f"borrowed_pasapub_{pubkey}")
+        if pasa is None:
+            return None
+        await redis.delete(f"borrowedpasa_{str(pasa)}")
+        await redis.delete(f"borrowed_pasapub_{pubkey}")
+
 
     async def initiate_borrow(self, redis: Redis, pubkey: str, pasa: int):
         """Mark an account as borrowed"""
@@ -62,7 +69,9 @@ class PASAApi():
             'pasa': pasa,
             'expires': Util.ms_since_epoch(datetime.datetime.utcnow()) + PASA_SOFT_EXPIRY,
             'price': PASA_PRICE,
-            'paid': False
+            'paid': False,
+            'transferred': False,
+            'transfer_ophash': None
         }
         await redis.set(f'borrowedpasa_{str(pasa)}', json.dumps(borrow_obj), expire=PASA_HARD_EXPIRY)
         await redis.set(f"borrowed_pasapub_{pubkey}", str(pasa), expire=PASA_HARD_EXPIRY)
@@ -90,6 +99,9 @@ class PASAApi():
         if bpasa['paid']:
             resp = await self.rpc_client.changeaccountinfo(SIGNER_ACCOUNT, bpasa['pasa'], bpasa['b58_pubkey'])
             if resp is not None:
+                bpasa['transferred'] = True
+                bpasa['transfer_ophahs'] = resp['ophash']
+                await redis.set(f'borrowedpasa_{str(bpasa["pasa"])}', json.dumps(bpasa), expire=PASA_HARD_EXPIRY)
                 log.server_logger.info(f"Transferred account {bpasa['pasa']} to {bpasa['b58_pubkey']}. hash: {resp['ophash']}")
                 # Sale complete
                 return resp['ophash']
