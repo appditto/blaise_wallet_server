@@ -100,7 +100,7 @@ class PASAApi():
             resp = await self.rpc_client.changeaccountinfo(SIGNER_ACCOUNT, bpasa['pasa'], bpasa['b58_pubkey'])
             if resp is not None:
                 bpasa['transferred'] = True
-                bpasa['transfer_ophahs'] = resp['ophash']
+                bpasa['transfer_ophash'] = resp['ophash']
                 await redis.set(f'borrowedpasa_{str(bpasa["pasa"])}', json.dumps(bpasa), expire=PASA_HARD_EXPIRY)
                 log.server_logger.info(f"Transferred account {bpasa['pasa']} to {bpasa['b58_pubkey']}. hash: {resp['ophash']}")
                 # Sale complete
