@@ -7,6 +7,7 @@ import logging
 import os
 import sys
 import time
+import datetime
 import uuid
 from logging.handlers import TimedRotatingFileHandler, WatchedFileHandler
 from threading import active_count
@@ -455,7 +456,17 @@ async def whitelist_rpc(r: web.Request):
                     if resp.status > 299:
                         log.server_logger.error('Received status code %d from request %s', resp.status, json.dumps(request_json))
                         raise Exception
-                    return web.json_response(await resp.json(content_type=None))
+                    resp_json = resp.json(content_type=None)
+                    if request_json['method'] == 'findaccounts' and 'result' in resp_json:
+                        bpasa = None
+                        if 'b58_pubkey' in request_json:
+                            bpasa = await pasa_api.pubkey_has_borrowed(r.app['rdata'], request_json['b58_pubkey'])
+                            if bpasa is not None:
+                                expiry = int(bpasa['expiry'])
+                                if Util.ms_since_epoch(datetime.datetime.utcnow()) > expiry:
+                                    bpasa = None
+                        resp_json['borrowed_account'] = bpasa if bpasa is not None else None
+                    return web.json_response(resp_json)
         except Exception:
             log.server_logger.exception()
             return web.HTTPInternalServerError()
@@ -518,7 +529,7 @@ async def check_borrowed_pasa(app):
                         await pasa_api.transfer_account(redis, int(bpasa['pasa']))
                         continue
                     elif op is not None and op['maturation'] is not None:
-                        await pasa_api.check_and_clear_borrow(bpasa['b58_pubkey'])
+                        await pasa_api.check_and_clear_borrow(redis, bpasa['b58_pubkey'])
                         continue
                     else:
                         continue
