@@ -7,7 +7,7 @@ Blaise is a mobile wallet written with Flutter. Pascal is a cryptocurrency.
 | Link | Description |
 | :----- | :------ |
 [pascalcoin.org](https://pascalcoin.org) | Pascal Homepage
-[blaisewallet.com](https://wallet.com) | Blaise Home Page
+[blaisewallet.com](https://blaisewallet.com) | Blaise Home Page
 [appditto.com](https://appditto.com) | Appditto Homepage
 
 ## Requirements
