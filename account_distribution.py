@@ -207,11 +207,11 @@ class PASAApi():
             # Skip PASA that is already borrowed
             if await self.pasa_is_borrowed(redis, acctnum):
                 continue
-            # Also skip PASA that has a balance >= 1 PASC
+            # Also skip PASA that has a balance >= PASA_PRICE PASC
             getaccount_resp = await self.rpc_client.getaccount(acctnum)
             if getaccount_resp is None or 'balance' not in getaccount_resp:
                 continue
-            elif getaccount_resp['balance'] >= 1:
+            elif getaccount_resp['balance'] >= PASA_PRICE:
                 continue
             # Initiate a borrow of this pubkey
             log.server_logger.debug(f'{req_json["b58_pubkey"]} is borrowing {acctnum}')
@@ -223,6 +223,6 @@ class PASAApi():
             return await self.borrow_account(r)
         elif resp is None:
             return web.json_response({'error': 'could not lend any accounts, try again later'})
-        await redis.set(f'bip_{self.util.get_request_ip(r)}', expire=300) # IP Restrict for 5 minutes
+        await redis.set(f'bip_{self.util.get_request_ip(r)}', 'value', expire=300) # IP Restrict for 5 minutes
         await self.set_last_borrowed(redis, last_borrowed + 1)
         return web.json_response(resp)
