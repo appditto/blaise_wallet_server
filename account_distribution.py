@@ -123,7 +123,7 @@ class PASAApi():
         redis: Redis = r.app['rdata']
         bpasa = await self.pubkey_has_borrowed(redis, req_json['b58_pubkey'])
         if bpasa is not None:
-            expiry = int(bpasa['expiry'])
+            expiry = int(bpasa['expires'])
             if Util.ms_since_epoch(datetime.datetime.utcnow()) > expiry:
                 bpasa = None
         resp_json = {
@@ -140,7 +140,7 @@ class PASAApi():
         response:
         {
             'pasa':31334,
-            'expiry'3333333,
+            'expires'3333333,
             'price':0.25
         }
         error:
