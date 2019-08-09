@@ -465,7 +465,12 @@ async def whitelist_rpc(r: web.Request):
                                 expiry = int(bpasa['expiry'])
                                 if Util.ms_since_epoch(datetime.datetime.utcnow()) > expiry:
                                     bpasa = None
-                        resp_json['borrowed_account'] = bpasa if bpasa is not None else None
+                        acct_resp = None
+                        if bpasa is not None:
+                            acct_resp = await jrpc_client.getaccount(int(bpasa['pasa']))
+                        if acct_resp is not None:
+                            resp_json['borrowed_account'] = bpasa if bpasa is not None else None
+                            resp_json['result'].append(acct_resp)
                     return web.json_response(resp_json)
         except Exception:
             log.server_logger.exception('Exception in RPC HTTP Request')
