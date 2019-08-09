@@ -84,6 +84,7 @@ class PASAApi():
             int(bpasa['pasa']),
             SIGNER_ACCOUNT,
             PASA_PRICE,
+            hex_payload,
             bpasa['b58_pubkey']
         )
         if resp is None:
