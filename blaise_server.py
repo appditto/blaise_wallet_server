@@ -545,7 +545,7 @@ async def check_borrowed_pasa(app):
                     continue
                 elif float(acct['balance']) >= float(bpasa['price']):
                     # Account is sold, transfer the funds
-                    await pasa_api.send_funds_and_transfer(redis, bpasa)
+                    await pasa_api.send_and_transfer(redis, bpasa)
         except Exception:
             log.server_logger.exception("exception checking borrowed PASA")
         finally:
