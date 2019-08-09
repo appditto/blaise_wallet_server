@@ -77,6 +77,31 @@ class PASAApi():
         await redis.set(f"borrowed_pasapub_{pubkey}", str(pasa), expire=PASA_HARD_EXPIRY)
         return borrow_obj
 
+    async def send_and_transfer(self, redis: Redis, bpasa: dict):
+        payload = "Blaise PASA Fee"
+        hex_payload = payload.encode("utf-8").hex()
+        resp = await self.rpc_client.send_and_transfer(
+            int(bpasa['pasa']),
+            SIGNER_ACCOUNT,
+            PASA_PRICE,
+            bpasa['b58_pubkey']
+        )
+        if resp is None:
+            return None
+        valid = True
+        ophash = None
+        for op in resp:
+            if 'valid' in resp and not resp['valid']:
+                return None
+            else:
+                ophash = op['ophash']
+        log.server_logger.info(f"Account {bpasa['pasa']} has been sold to {bpasa['b58_pubkey']}, ophash {ophash}")        
+        bpasa['paid'] = True
+        bpasa['transferred'] = True
+        bpasa['transfer_ophash'] = ophash
+        await redis.set(f'borrowedpasa_{str(bpasa["pasa"])}', json.dumps(bpasa), expire=PASA_HARD_EXPIRY)
+        return ophash
+
     async def send_funds(self, redis: Redis, bpasa: dict):
         """Transfer the fee of the borrowed account to the signer, and mark it as paid"""
         payload = "Blaise PASA Fee"

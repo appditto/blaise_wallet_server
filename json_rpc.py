@@ -124,3 +124,46 @@ class PascJsonRpc():
                 log.server_logger.error(f'findoperation: received invalid jsonrpc response {json.dumps(response)}')
             return None
         return response['result']
+
+    async def send_and_transfer(self, sender: int, target: int, amount: int, payload: str, b58_pubkey:str, fee: int = 0.0002):
+        method = 'multioperationaddoperation'
+        senders = {
+            'account': sender,
+            'amount': amount,
+            'payload': payload
+        }
+        receivers = {
+            'target': target,
+            'amount': amount - fee,
+            'payload': payload
+        }
+        changers = {
+            'account': sender,
+            'new_b58_pubkey': b58_pubkey
+        }
+        params = {
+            'auto_n_operation': True,
+            'senders': senders,
+            'receivers': receivers,
+            'changesinfo': changers
+        }
+        response = await self.jsonrpc_request(method, params)
+        if response is None or 'result' not in response or 'error' in response:
+            if response is not None:
+                log.server_logger.error(f'multioperationaddoperation: received invalid jsonrpc response {json.dumps(response)}')
+            return None
+        rawop = response['result']['rawoperations']
+        execop_resp = await self.executeoperations(rawop)
+        return execop_resp
+
+    async def executeoperations(self, rawoperations: str):
+        method = 'executeoperations'
+        params = {
+            'rawoperations': rawoperations
+        }
+        response = await self.jsonrpc_request(method, params)
+        if response is None or 'result' not in response or 'error' in response:
+            if response is not None:
+                log.server_logger.error(f'executeoperations: received invalid jsonrpc response {json.dumps(response)}')
+            return None
+        rawop = response['result']
