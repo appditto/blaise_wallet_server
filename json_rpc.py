@@ -23,7 +23,7 @@ class PascJsonRpc():
                         raise Exception
                     return await resp.json(content_type=None)
         except Exception:
-            log.server_logger.exception()
+            log.server_logger.exception('Exception in JRPC Request')
             return None
 
     async def findaccounts(self, start: int, b58_pubkey: str):

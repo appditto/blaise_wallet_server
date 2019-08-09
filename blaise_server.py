@@ -468,7 +468,7 @@ async def whitelist_rpc(r: web.Request):
                         resp_json['borrowed_account'] = bpasa if bpasa is not None else None
                     return web.json_response(resp_json)
         except Exception:
-            log.server_logger.exception()
+            log.server_logger.exception('Exception in RPC HTTP Request')
             return web.HTTPInternalServerError()
     except Exception:
         log.server_logger.exception("received exception in http_api")
