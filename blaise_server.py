@@ -456,7 +456,7 @@ async def whitelist_rpc(r: web.Request):
                     if resp.status > 299:
                         log.server_logger.error('Received status code %d from request %s', resp.status, json.dumps(request_json))
                         raise Exception
-                    resp_json = resp.json(content_type=None)
+                    resp_json = await resp.json(content_type=None)
                     if request_json['method'] == 'findaccounts' and 'result' in resp_json:
                         bpasa = None
                         if 'b58_pubkey' in request_json:
