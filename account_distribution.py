@@ -13,6 +13,7 @@ from settings import SIGNER_ACCOUNT, DONATION_ACCOUNT, PUBKEY_B58, PASA_HARD_EXP
 class PASAApi():
     def __init__(self, rpc_client: PascJsonRpc):
         self.rpc_client = rpc_client
+        self.util = Util()
 
     async def get_last_borrowed(self, redis: Redis):
         """Get index to start in findaccounts request"""
@@ -107,7 +108,7 @@ class PASAApi():
         """Transfer the fee of the borrowed account to the signer, and mark it as paid"""
         payload = "Blaise PASA Fee"
         hex_payload = payload.encode("utf-8").hex()
-        resp = await self.rpc_client.sendto(int(bpasa['pasa']), DONATION_ACCOUNT, PASA_PRICE - 0.0002, hex_payload, fee=0.0001)
+        resp = await self.rpc_client.sendto(int(bpasa['pasa']), DONATION_ACCOUNT, PASA_PRICE - 0.0006, hex_payload, fee=0.0001)
         if resp is None:
             return None
         # Mark account as paid
@@ -206,6 +207,12 @@ class PASAApi():
             # Skip PASA that is already borrowed
             if await self.pasa_is_borrowed(redis, acctnum):
                 continue
+            # Also skip PASA that has a balance >= 1 PASC
+            getaccount_resp = await self.rpc_client.getaccount(acctnum)
+            if getaccount_resp is None or 'balance' not in getaccount_resp:
+                continue
+            elif getaccount_resp['balance'] >= 1:
+                continue
             # Initiate a borrow of this pubkey
             log.server_logger.debug(f'{req_json["b58_pubkey"]} is borrowing {acctnum}')
             resp = await self.initiate_borrow(redis, req_json['b58_pubkey'], acctnum)
@@ -216,5 +223,6 @@ class PASAApi():
             return await self.borrow_account(r)
         elif resp is None:
             return web.json_response({'error': 'could not lend any accounts, try again later'})
+        await redis.set(f'bip_{self.util.get_request_ip(r)}', expire=300) # IP Restrict for 5 minutes
         await self.set_last_borrowed(redis, last_borrowed + 1)
         return web.json_response(resp)

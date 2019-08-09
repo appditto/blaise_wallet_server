@@ -431,6 +431,11 @@ async def http_api(r: web.Request):
         elif request_json['action'] == 'price_data':
             return web.json_response({'price':await r.app['rdata'].hget("prices", "coingecko:pasc-usd")})
         elif request_json['action'] == 'borrow_account':
+            # IP Throttling on borrow_account
+            redis: Redis = r.app['rdata']
+            borrow_redid = await redis.get(f'bip_{util.get_request_ip(r)}')
+            if borrow_redid is not None:
+                return web.json_response({'error': 'Wait awhile before buying again'})
             return await pasa_api.borrow_account(r)
         elif request_json['action'] == 'getborrowed':
             return await pasa_api.getborrowed(r)
