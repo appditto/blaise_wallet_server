@@ -476,6 +476,17 @@ async def whitelist_rpc(r: web.Request):
                         if acct_resp is not None:
                             resp_json['borrowed_account'] = bpasa if bpasa is not None else None
                             resp_json['result'].append(acct_resp)
+                        elif request_json['method'] == 'getaccount' and 'result' in resp_json and 'borrowed' in request_json['params'] and request_json['params']['borrowed']:
+                            # Add paid flag to this account
+                            balance = float(resp_json['result']['balance'])
+                            paid = False
+                            if balance >= 0.25:
+                                paid = True;
+                            else:
+                                bpasa = await pasa_api.get_borrowed_pasa(r.app['rdata'], request_json['account'])
+                                if bpasa is not None and bpasa['paid']:
+                                    paid = True
+                            resp_json['result']['paid'] = paid
                     return web.json_response(resp_json)
         except Exception:
             log.server_logger.exception('Exception in RPC HTTP Request')
