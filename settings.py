@@ -2,6 +2,7 @@ import os
 
 # Account used to sign transactions with fees
 SIGNER_ACCOUNT = int(os.getenv('SIGNER_ACCOUNT', 123456))
+DONATION_ACCOUNT = int(os.getenv('DONATION_ACCOUNT', 1185729))
 # Public key of our account
 PUBKEY_B58 = os.getenv('PUBKEY_B58', '123456')
 # Soft Expiry of Borrowed Pasa (milliseconds)

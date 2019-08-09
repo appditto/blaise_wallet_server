@@ -8,7 +8,7 @@ from aioredis import Redis
 
 from json_rpc import PascJsonRpc
 from util import Util
-from settings import SIGNER_ACCOUNT, PUBKEY_B58, PASA_HARD_EXPIRY, PASA_SOFT_EXPIRY, PASA_PRICE
+from settings import SIGNER_ACCOUNT, DONATION_ACCOUNT, PUBKEY_B58, PASA_HARD_EXPIRY, PASA_SOFT_EXPIRY, PASA_PRICE
 
 class PASAApi():
     def __init__(self, rpc_client: PascJsonRpc):
@@ -107,7 +107,7 @@ class PASAApi():
         """Transfer the fee of the borrowed account to the signer, and mark it as paid"""
         payload = "Blaise PASA Fee"
         hex_payload = payload.encode("utf-8").hex()
-        resp = await self.rpc_client.sendto(int(bpasa['pasa']), SIGNER_ACCOUNT, PASA_PRICE, hex_payload)
+        resp = await self.rpc_client.sendto(int(bpasa['pasa']), DONATION_ACCOUNT, PASA_PRICE, hex_payload)
         if resp is None:
             return None
         # Mark account as paid
