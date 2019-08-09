@@ -77,9 +77,23 @@ class PascJsonRpc():
             'fee': fee
         }
         response = await self.jsonrpc_request(method, params)
-        if response is None or 'result' not in response or 'ophash' not in response['result']:
+        if response is None or 'error' in response or 'result' not in response or 'ophash' not in response['result']:
             if response is not None:
                 log.server_logger.error(f'changeaccountinfo: received invalid jsonrpc response {json.dumps(response)}')
+            return None
+        return response['result']
+
+    async def changekey(self, account: int, new_b58_pubkey: str, fee: float = 0.0001):
+        method = 'changekey'
+        params = {
+            'account': account,
+            'new_b58_pubkey': new_b58_pubkey,
+            'fee': fee
+        }
+        response = await self.jsonrpc_request(method, params)
+        if response is None or 'error' in response or 'result' not in response or 'ophash' not in response['result']:
+            if response is not None:
+                log.server_logger.error(f'changekey: received invalid jsonrpc response {json.dumps(response)}')
             return None
         return response['result']
 

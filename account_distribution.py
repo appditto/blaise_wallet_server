@@ -107,7 +107,7 @@ class PASAApi():
         """Transfer the fee of the borrowed account to the signer, and mark it as paid"""
         payload = "Blaise PASA Fee"
         hex_payload = payload.encode("utf-8").hex()
-        resp = await self.rpc_client.sendto(int(bpasa['pasa']), DONATION_ACCOUNT, PASA_PRICE, hex_payload)
+        resp = await self.rpc_client.sendto(int(bpasa['pasa']), DONATION_ACCOUNT, PASA_PRICE - 0.0002, hex_payload, fee=0.0001)
         if resp is None:
             return None
         # Mark account as paid
@@ -123,7 +123,7 @@ class PASAApi():
             return None
         bpasa = json.loads(bpasa)
         if bpasa['paid']:
-            resp = await self.rpc_client.changeaccountinfo(SIGNER_ACCOUNT, bpasa['pasa'], bpasa['b58_pubkey'])
+            resp = await self.rpc_client.changekey(bpasa['pasa'], bpasa['b58_pubkey'])
             if resp is not None:
                 bpasa['transferred'] = True
                 bpasa['transfer_ophash'] = resp['ophash']
