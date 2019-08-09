@@ -459,8 +459,8 @@ async def whitelist_rpc(r: web.Request):
                     resp_json = await resp.json(content_type=None)
                     if request_json['method'] == 'findaccounts' and 'result' in resp_json:
                         bpasa = None
-                        if 'b58_pubkey' in request_json:
-                            bpasa = await pasa_api.pubkey_has_borrowed(r.app['rdata'], request_json['b58_pubkey'])
+                        if 'b58_pubkey' in request_json['params']:
+                            bpasa = await pasa_api.pubkey_has_borrowed(r.app['rdata'], request_json['params']['b58_pubkey'])
                             if bpasa is not None:
                                 expiry = int(bpasa['expiry'])
                                 if Util.ms_since_epoch(datetime.datetime.utcnow()) > expiry:
