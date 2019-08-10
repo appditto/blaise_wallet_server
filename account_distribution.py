@@ -2,7 +2,6 @@
 import datetime
 import json
 
-import base58
 from aiohttp import web, log
 from aioredis import Redis
 
@@ -138,12 +137,7 @@ class PASAApi():
         req_json = await r.json()
         if 'b58_pubkey' not in req_json:
             return web.HTTPBadRequest(reason="Bad request - missing b58_pubkey")
-        elif len(req_json['b58_pubkey']) < 80:
-            log.server_logger.info(f'received invalid pubkey {req_json["b58_pubkey"]} (length)')
-            return web.json_response({'error': 'invalid public key'})
-        try:
-            base58.b58decode(req_json['b58_pubkey'])
-        except ValueError:
+        elif not Util.validate_pubkey(req_json['b58_pubkey']):
             log.server_logger.info(f'received invalid pubkey {req_json["b58_pubkey"]} (b58decode)')
             return web.json_response({'error': 'invalid public key'})
         # Get the account that is borrowed
@@ -178,12 +172,7 @@ class PASAApi():
         req_json = await r.json()
         if 'b58_pubkey' not in req_json:
             return web.HTTPBadRequest(reason="Bad request - missing b58_pubkey")
-        elif len(req_json['b58_pubkey']) < 80:
-            log.server_logger.info(f'received invalid pubkey {req_json["b58_pubkey"]} (length)')
-            return web.json_response({'error': 'invalid public key'})
-        try:
-            base58.b58decode(req_json['b58_pubkey'])
-        except ValueError:
+        elif not Util.validate_pubkey(req_json['b58_pubkey']):
             log.server_logger.info(f'received invalid pubkey {req_json["b58_pubkey"]} (b58decode)')
             return web.json_response({'error': 'invalid public key'})
         redis: Redis = r.app['rdata'] 
