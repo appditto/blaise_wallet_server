@@ -483,7 +483,7 @@ async def whitelist_rpc(r: web.Request):
                         if balance >= 0.25:
                             paid = True;
                         else:
-                            bpasa = await pasa_api.get_borrowed_pasa(r.app['rdata'], request_json['account'])
+                            bpasa = await pasa_api.get_borrowed_pasa(r.app['rdata'], request_json['params']['account'])
                             if bpasa is not None and bpasa['paid']:
                                 paid = True
                         resp_json['result']['paid'] = paid
