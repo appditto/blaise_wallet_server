@@ -10,7 +10,6 @@ import time
 import datetime
 import uuid
 from logging.handlers import TimedRotatingFileHandler, WatchedFileHandler
-from threading import active_count
 
 import aiofcm
 import uvloop
