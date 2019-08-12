@@ -68,6 +68,20 @@ SIGNER_ACCOUNT=1234       # (Optional) Account on the wallet that is used to sig
 PUBKEY_B58=3gb0p          # (Optional) Public key of the daemon wallet
 ```
 
+## Price Cron
+
+The prices are updated via a cron job. This can be created as such.
+
+```
+crontab -e
+```
+
+Add the following line to crontab and save
+
+```
+*/5 * * * * /home/blaise/blaise_server/venv/bin/python /home/blaise/blaise_server/price_cron.py >/dev/null 2>&1
+```
+
 ## Running
 
 The recommended configuration is to run the server behind [nginx](https://www.nginx.com/), which will act as a reverse proxy
