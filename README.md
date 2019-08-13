@@ -39,10 +39,10 @@ Generally:
 4) Run
 
 ```
-sudo adduser blaise # Add natriumuser
-sudo usermod -aG sudo blaise # Add natriumuser to sudo group
-sudo usermod -aG www-data blaise # Add natriumuser to www-data group
-sudo su - blaise # Change to natriumuser
+sudo adduser blaise # Add blaise user
+sudo usermod -aG sudo blaise # Add blaise to sudo group
+sudo usermod -aG www-data blaise # Add blaise to www-data group
+sudo su - blaise # Change to blaise
 git clone https://github.com/appditto/blaise_wallet_server.git blaise_server # Clone repository
 ```
 
@@ -100,7 +100,7 @@ User=blaise
 Group=www-data
 EnvironmentFile=/home/blaise/blaise_server/.env
 WorkingDirectory=/home/blaise/blaise_server
-ExecStart=/home/blaise/blaise_server/venv/bin/python natriumcast.py --host 127.0.0.1 --port %i --log-file /tmp/blaise%i.log
+ExecStart=/home/blaise/blaise_server/venv/bin/python blaise_server.py --host 127.0.0.1 --port %i --log-file /tmp/blaise%i.log
 Restart=on-failure
 
 [Install]
@@ -111,8 +111,8 @@ Enable this service and start it, ensure all is working as expected
 
 ```
 sudo systemctl enable blaise@4443
-sudo systemctl start natriumcast@4443
-sudo systemctl status natriumcast@4443
+sudo systemctl start blaise@4443
+sudo systemctl status blaise@4443
 ```
 
 Next, configure nginx to proxy requests to this server
