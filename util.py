@@ -49,3 +49,9 @@ class Util:
             return True
         except Exception:
             return False
+    
+    @staticmethod
+    def b58_to_enc_pubkey(b58_pubkey: str):
+        decoded = base58.b58decode(b58_pubkey)
+        decoded = decoded[1:-4]
+        return decoded.hex().upper()

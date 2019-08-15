@@ -102,6 +102,7 @@ async def delete_fcm_token(account: int, token : str, r : web.Request):
 
 async def delete_fcm_account(account: int, token: str, r: web.Request, explicit: bool = False):
     acct_list = await r.app['rdata'].get(str(account))
+    await r.app['rdata'].delete(f'fcm{token}')
     if acct_list is not None:
         acct_list = json.loads(acct_list.replace('\'', '"'))
         acct_list['data'].remove(token)
@@ -110,12 +111,14 @@ async def delete_fcm_account(account: int, token: str, r: web.Request, explicit:
         if explicit:
             await r.app['rdata'].set(f'explicitfcmdel_{str(account)}', 'true', expire=1000)
 
-async def update_fcm_token_for_account(account : int, token : str, r : web.Request):
+async def update_fcm_token_for_account(account : int, token : str, r : web.Request, b58_pubkey: str):
     """Store device FCM registration tokens in redis"""
     # Dont add explicit deletes
     ed = await r.app['rdata'].get(f'explicitfcmdel_{str(account)}')
     if ed is not None:
         return
+    elif b58_pubkey is not None:
+        await r.app['rdata'].set(f'fcm{token}', b58_pubkey)
     redis: Redis = r.app['rdata']
     # We keep a list of FCM tokens and accounts, because of multiple accounts
     token_account_list = await redis.get(f'fcm_{token}')
@@ -180,6 +183,16 @@ async def check_and_do_push_notification(redis: Redis, op):
     notification_title = f"Received {abs(float(op['receivers'][0]['amount']))} PASCAL"
     notification_body = f"Open Blaise to view this transaction."
     for t in fcm_tokens:
+        b58_pubkey = await redis.get(f'fcm{t}')
+        if b58_pubkey is not None:
+            # Verify pubkey
+            account = op['receivers'][0]['account']
+            acct_resp = await jrpc_client.getaccount(account)
+            if acct_resp is None:
+                continue
+            expected_pubkey_enc = acct_resp['enc_pubkey'].upper()
+            if Util.b58_to_enc_pubkey(b58_pubkey) != expected_pubkey_enc:
+                continue
         message = aiofcm.Message(
             device_token = t,
             notification = {
@@ -199,7 +212,7 @@ async def check_and_do_push_notification(redis: Redis, op):
 # APIs
 
 # Websocket
-async def ws_reconnect(ws : web.WebSocketResponse, r : web.Response, account : int):
+async def ws_reconnect(ws : web.WebSocketResponse, r : web.Response, account : int, b58_pubkey: str):
     """When a websocket connection sends a subscribe request, do this reconnection step"""
     log.server_logger.info('reconnecting;' + util.get_request_ip(r) + ';' + ws.id)
 
@@ -217,6 +230,8 @@ async def ws_reconnect(ws : web.WebSocketResponse, r : web.Response, account : i
     response['currency'] = r.app['cur_prefs'][ws.id].lower()
     response['price'] = float(price_cur)
     response['btc'] = float(price_btc)
+    if b58_pubkey is not None:
+        response['borrow_eligible'] = await pasa_api.is_pasa_eligible(r.app['rdata'], b58_pubkey)
     response = json.dumps(response)
 
     log.server_logger.info(
@@ -224,7 +239,7 @@ async def ws_reconnect(ws : web.WebSocketResponse, r : web.Response, account : i
 
     await ws.send_str(response)
 
-async def ws_connect(ws : web.WebSocketResponse, r : web.Response, account : int, currency : str):
+async def ws_connect(ws : web.WebSocketResponse, r : web.Response, account : int, currency : str, b58_pubkey: str):
     """Clients subscribing for the first time"""
     log.server_logger.info('subscribing;%s;%s', util.get_request_ip(r), ws.id)
 
@@ -247,6 +262,8 @@ async def ws_connect(ws : web.WebSocketResponse, r : web.Response, account : int
     response['currency'] = r.app['cur_prefs'][ws.id].lower()
     response['price'] = float(price_cur)
     response['btc'] = float(price_btc)
+    if b58_pubkey is not None:
+        response['borrow_eligible'] = await pasa_api.is_pasa_eligible(r.app['rdata'], b58_pubkey)
     response = json.dumps(response)
 
     log.server_logger.info(
@@ -309,16 +326,15 @@ async def handle_user_message(r : web.Request, message : str, ws : web.WebSocket
                                 r.app['cur_prefs'][uid] = 'usd'
                                 await r.app['rdata'].hset(uid, "currency", 'usd')
 
-                        # Get relevant account
-                        account = None
-                        if 'account' in request_json:
-                            account = request_json['account']
+                        # Get relevant account and public key
+                        account = request_json['account'] if 'account' in request_json else None
+                        b58_pubkey = request_json['b58_pubkey'] if 'b58_pubkey' in request_json else None
 
-                        await ws_reconnect(ws, r, account)
+                        await ws_reconnect(ws, r, account, b58_pubkey)
 
                         if 'fcm_token' in request_json and account is not None:
                             if request_json['notification_enabled']:
-                                await update_fcm_token_for_account(account, request_json['fcm_token'], r)
+                                await update_fcm_token_for_account(account, request_json['fcm_token'], r, b58_pubkey)
                             else:
                                 await delete_fcm_token(account, request_json['fcm_token'], r)
                     except Exception as e:
@@ -334,11 +350,12 @@ async def handle_user_message(r : web.Request, message : str, ws : web.WebSocket
                         else:
                             currency = 'usd'
                         account = request_json['account'] if 'account' in request_json else None
-                        await ws_connect(ws, r, account, currency)
+                        b58_pubkey = request_json['b58_pubkey'] if 'b58_pubkey' in request_json else None
+                        await ws_connect(ws, r, account, currency, b58_pubkey)
 
                         if 'fcm_token' in request_json and account is not None:
                             if request_json['notification_enabled']:
-                                await update_fcm_token_for_account(account, request_json['fcm_token'], r)
+                                await update_fcm_token_for_account(account, request_json['fcm_token'], r, b58_pubkey)
                             else:
                                 await delete_fcm_token(account, request_json['fcm_token'], r)
                     except Exception as e:
@@ -348,20 +365,23 @@ async def handle_user_message(r : web.Request, message : str, ws : web.WebSocket
             elif request_json['action'] == "fcm_update":
                 # Updating FCM token
                 if 'fcm_token' in request_json and 'account' in request_json and 'enabled' in request_json:
+                    b58_pubkey = request_json['b58_pubkey'] if 'b58_pubkey' in request_json else None
                     if request_json['enabled']:
-                        await update_fcm_token_for_account(request_json['account'], request_json['fcm_token'], r)
+                        await update_fcm_token_for_account(request_json['account'], request_json['fcm_token'], r, b58_pubkey)
                     else:
                         await delete_fcm_token(request_json['account'], request_json['fcm_token'], r)
             elif request_json['action'] == 'fcm_update_bulk':
                 if 'fcm_token' in request_json and 'accounts' in request_json and 'enabled' in request_json:
+                    b58_pubkey = request_json['b58_pubkey'] if 'b58_pubkey' in request_json else None
                     if request_json['enabled']:
                         for account in request_json['accounts']:
-                            await update_fcm_token_for_account(account, request_json['fcm_token'], r)
+                            await update_fcm_token_for_account(account, request_json['fcm_token'], r, b58_pubkey)
                     else:
                         for account in request_json['accounts']:
                             await delete_fcm_token(account, request_json['fcm_token'], r)
             elif request_json['action'] == 'fcm_delete_account':
                 if 'fcm_token' in request_json and 'account' in request_json:
+                    b58_pubkey = request_json['b58_pubkey'] if 'b58_pubkey' in request_json else None
                     await delete_fcm_account(request_json['account'], request_json['fcm_token'], r, explicit=True)             
     except Exception as e:
         log.server_logger.exception('uncaught error;%s;%s', util.get_request_ip(r), uid)

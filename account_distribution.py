@@ -7,7 +7,7 @@ from aioredis import Redis
 
 from json_rpc import PascJsonRpc
 from util import Util
-from settings import SIGNER_ACCOUNT, DONATION_ACCOUNT, PUBKEY_B58, PASA_HARD_EXPIRY, PASA_SOFT_EXPIRY, PASA_PRICE
+from settings import SIGNER_ACCOUNT, DONATION_ACCOUNT, PUBKEY_B58, PASA_HARD_EXPIRY, PASA_SOFT_EXPIRY, PASA_PRICE, PASA_LIMIT
 
 class PASAApi():
     def __init__(self, rpc_client: PascJsonRpc):
@@ -77,6 +77,23 @@ class PASAApi():
         await redis.set(f"borrowed_pasapub_{pubkey}", str(pasa), expire=PASA_HARD_EXPIRY)
         return borrow_obj
 
+    async def is_pasa_eligible(self, redis: Redis, b58_pubkey: str):
+        pasa_count = await redis.get(f'pasalimit_{b58_pubkey}')
+        if pasa_count is None:
+            return True
+        elif int(pasa_count) < PASA_LIMIT:
+            return True
+        return False
+
+    async def inc_pasa_count(self, redis: Redis, b58_pubkey: str):
+        count = 0
+        pasa_count = await redis.get(f'pasalimit_{b58_pubkey}')
+        if pasa_count is None:
+            count = 1
+        else:
+            count = int(pasa_count) + 1
+        await redis.set(f'pasalimit_{b58_pubkey}', str(count))
+
     async def send_and_transfer(self, redis: Redis, bpasa: dict):
         payload = "Blaise PASA Fee"
         hex_payload = payload.encode("utf-8").hex()
@@ -100,6 +117,7 @@ class PASAApi():
         bpasa['paid'] = True
         bpasa['transferred'] = True
         bpasa['transfer_ophash'] = ophash
+        await self.inc_pasa_count(redis, bpasa['b58_pubkey'])
         await redis.set(f'borrowedpasa_{str(bpasa["pasa"])}', json.dumps(bpasa), expire=PASA_HARD_EXPIRY)
         return ophash
 
@@ -182,6 +200,8 @@ class PASAApi():
             # Reset expiry and return result
             log.server_logger.debug(f'resetting expiry and returning {req_json["b58_pubkey"]}, pasa {bpasa["pasa"]}')
             return web.json_response(await self.reset_expiry(redis, bpasa))
+        elif await self.is_pasa_eligible(redis, req_json['b58_pubkey']):
+            return web.json_response({'error': 'purchase limit reached'})
         # Do findaccounts request
         last_borrowed = await self.get_last_borrowed(redis)
         accounts = await self.rpc_client.findaccounts(start=last_borrowed, b58_pubkey=PUBKEY_B58)

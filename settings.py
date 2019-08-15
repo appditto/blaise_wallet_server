@@ -11,3 +11,5 @@ PASA_SOFT_EXPIRY = 259200000 # 3 days
 PASA_HARD_EXPIRY = 2592000 # 30 days
 # Price of borrowed accounts
 PASA_PRICE = 0.25
+# Limit of borrowed accounts
+PASA_LIMIT = 2
