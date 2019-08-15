@@ -200,7 +200,7 @@ class PASAApi():
             # Reset expiry and return result
             log.server_logger.debug(f'resetting expiry and returning {req_json["b58_pubkey"]}, pasa {bpasa["pasa"]}')
             return web.json_response(await self.reset_expiry(redis, bpasa))
-        elif await self.is_pasa_eligible(redis, req_json['b58_pubkey']):
+        elif not await self.is_pasa_eligible(redis, req_json['b58_pubkey']):
             return web.json_response({'error': 'purchase limit reached'})
         # Do findaccounts request
         last_borrowed = await self.get_last_borrowed(redis)
