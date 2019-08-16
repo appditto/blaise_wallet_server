@@ -81,7 +81,7 @@ class PASAApi():
         pasa_count = await redis.get(f'pasalimit_{b58_pubkey}')
         if pasa_count is None:
             return True
-        elif int(pasa_count) < PASA_LIMIT:
+        elif PASA_LIMIT >= int(pasa_count):
             return True
         return False
 
