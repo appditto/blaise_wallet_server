@@ -227,6 +227,7 @@ async def ws_reconnect(ws : web.WebSocketResponse, r : web.Response, account : i
     price_cur = await r.app['rdata'].hget("prices", f"{price_prefix}-" + r.app['cur_prefs'][ws.id].lower())
     price_btc = await r.app['rdata'].hget("prices", f"{price_prefix}-btc")
     response = {}
+    response['subscribe'] = True
     response['currency'] = r.app['cur_prefs'][ws.id].lower()
     response['price'] = float(price_cur)
     response['btc'] = float(price_btc)
@@ -256,6 +257,7 @@ async def ws_connect(ws : web.WebSocketResponse, r : web.Response, account : int
     await r.app['rdata'].hset(ws.id, "currency", currency)
     await r.app['rdata'].hset(ws.id, "last-connect", float(time.time()))
     response = {}
+    response['subscribe'] = True
     response['uuid'] = ws.id
     price_cur = await r.app['rdata'].hget("prices", f"{price_prefix}-" + r.app['cur_prefs'][ws.id].lower())
     price_btc = await r.app['rdata'].hget("prices", f"{price_prefix}-btc")
