@@ -307,11 +307,11 @@ async def handle_user_message(r : web.Request, message : str, ws : web.WebSocket
             if request_json['action'] == "account_subscribe" and ws is not None:
                 # already subscribed, reconnect (websocket connections)
                 if 'uuid' in request_json:
-                    uid = request_json['uuid']
                     try:
                         del r.app['clients'][uid]
                     except Exception:
                         pass
+                    uid = request_json['uuid']
                     ws.id = uid
                     r.app['clients'][uid] = ws
                     log.server_logger.info('reconnection request;' + address + ';' + uid)
@@ -541,6 +541,10 @@ async def send_prices(app):
                         await ws.send_str(json.dumps(response))
                     except Exception:
                         log.server_logger.exception('error pushing prices for client %s', client)
+                        try:
+                            del app['clients'][client]
+                        except Exception:
+                            pass
         except Exception:
             log.server_logger.exception("exception pushing price data")
         finally:
