@@ -23,6 +23,7 @@ from json_rpc import PascJsonRpc
 from price_cron import currency_list  # Supported currencies
 from settings import PASA_PRICE
 from util import Util
+from freepasa_api import FreePasaAPI
 
 load_dotenv()
 
@@ -62,6 +63,9 @@ debug_mode = True if int(os.getenv('DEBUG', 1)) != 0 else False
 
 jrpc_client = PascJsonRpc(rpc_url)
 pasa_api = PASAApi(jrpc_client)
+
+freepasa_api_key = os.getenv('FREEPASA_API_KEY', '123456')
+freepasa = FreePasaAPI(freepasa_api_key)
 
 # Local constants
 
@@ -458,6 +462,23 @@ async def http_api(r: web.Request):
             return await pasa_api.borrow_account(r)
         elif request_json['action'] == 'getborrowed':
             return await pasa_api.getborrowed(r)
+        elif request_json['action'] == 'freepasa_get':
+            resp = await freepasa.get_account(
+                request_json['phone_iso'],
+                request_json['phone_number'],
+                request_json['b58_pubkey']
+            )
+            if resp is not None:
+                return web.json_response({'success':resp})
+            return web.json_response({'error':'freepasa request failed'})
+        elif request_json['action'] == 'freepasa_Verify':
+            resp = await freepasa.verify_sms(
+                request_json['request_id'],
+                request_json['code']
+            )
+            if resp is not None:
+                return web.json_response({'success':resp})
+            return web.json_response({'error':'freepasa verify request failed'})
         return web.HTTPBadRequest(reason="Bad request")
     except Exception:
         log.server_logger.exception('Exception in http_api')
