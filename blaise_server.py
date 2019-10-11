@@ -231,6 +231,7 @@ async def ws_reconnect(ws : web.WebSocketResponse, r : web.Response, account : i
     price_cur = await r.app['rdata'].hget("prices", f"{price_prefix}-" + r.app['cur_prefs'][ws.id].lower())
     price_btc = await r.app['rdata'].hget("prices", f"{price_prefix}-btc")
     response = {}
+    response['subscribe'] = True
     response['currency'] = r.app['cur_prefs'][ws.id].lower()
     response['price'] = float(price_cur)
     response['btc'] = float(price_btc)
@@ -260,6 +261,7 @@ async def ws_connect(ws : web.WebSocketResponse, r : web.Response, account : int
     await r.app['rdata'].hset(ws.id, "currency", currency)
     await r.app['rdata'].hset(ws.id, "last-connect", float(time.time()))
     response = {}
+    response['subscribe'] = True
     response['uuid'] = ws.id
     price_cur = await r.app['rdata'].hget("prices", f"{price_prefix}-" + r.app['cur_prefs'][ws.id].lower())
     price_btc = await r.app['rdata'].hget("prices", f"{price_prefix}-btc")
@@ -309,11 +311,11 @@ async def handle_user_message(r : web.Request, message : str, ws : web.WebSocket
             if request_json['action'] == "account_subscribe" and ws is not None:
                 # already subscribed, reconnect (websocket connections)
                 if 'uuid' in request_json:
-                    uid = request_json['uuid']
                     try:
                         del r.app['clients'][uid]
                     except Exception:
                         pass
+                    uid = request_json['uuid']
                     ws.id = uid
                     r.app['clients'][uid] = ws
                     log.server_logger.info('reconnection request;' + address + ';' + uid)
@@ -505,6 +507,7 @@ async def whitelist_rpc(r: web.Request):
                     if request_json['method'] == 'findaccounts' and 'result' in resp_json:
                         bpasa = None
                         if 'b58_pubkey' in request_json['params']:
+                            resp_json['borrow_eligible'] = await pasa_api.is_pasa_eligible(r.app['rdata'], request_json['params']['b58_pubkey'])
                             bpasa = await pasa_api.pubkey_has_borrowed(r.app['rdata'], request_json['params']['b58_pubkey'])
                             if bpasa is not None:
                                 expiry = int(bpasa['expires'])
@@ -559,6 +562,10 @@ async def send_prices(app):
                         await ws.send_str(json.dumps(response))
                     except Exception:
                         log.server_logger.exception('error pushing prices for client %s', client)
+                        try:
+                            del app['clients'][client]
+                        except Exception:
+                            pass
         except Exception:
             log.server_logger.exception("exception pushing price data")
         finally:

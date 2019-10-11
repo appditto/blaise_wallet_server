@@ -81,7 +81,7 @@ class PASAApi():
         pasa_count = await redis.get(f'pasalimit_{b58_pubkey}')
         if pasa_count is None:
             return True
-        elif int(pasa_count) < PASA_LIMIT:
+        elif PASA_LIMIT >= int(pasa_count):
             return True
         return False
 
@@ -143,6 +143,7 @@ class PASAApi():
         if bpasa['paid']:
             resp = await self.rpc_client.changekey(bpasa['pasa'], bpasa['b58_pubkey'])
             if resp is not None:
+                await self.inc_pasa_count(redis, bpasa['b58_pubkey'])
                 bpasa['transferred'] = True
                 bpasa['transfer_ophash'] = resp['ophash']
                 await redis.set(f'borrowedpasa_{str(bpasa["pasa"])}', json.dumps(bpasa), expire=PASA_HARD_EXPIRY)
