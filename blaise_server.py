@@ -473,7 +473,7 @@ async def http_api(r: web.Request):
             if resp is not None:
                 return web.json_response({'success':resp})
             return web.json_response({'error':'freepasa request failed'})
-        elif request_json['action'] == 'freepasa_Verify':
+        elif request_json['action'] == 'freepasa_verify':
             resp = await freepasa.verify_sms(
                 request_json['request_id'],
                 request_json['code']
