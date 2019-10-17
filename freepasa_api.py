@@ -38,6 +38,10 @@ class FreePasaAPI():
                     resp_json = await resp.json()
                     if 'status' in resp_json and resp_json['status'] == 'success':
                         return resp_json['data']['account']
+                    elif 'status' in resp_json and resp_json['status'] == 'error':
+                        for error in resp_json['data']:
+                            if error == 'verification_failed':
+                                return -1
                     log.server_logger.error(f'error response from freepasa {resp_json["status"]}, data: {str(resp_json["data"])}')
         except Exception:
             log.server_logger.exception()
