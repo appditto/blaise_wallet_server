@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blaise-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: blaise-server
+  template:
+    metadata:
+      labels:
+        app: blaise-server
+    spec:
+      containers:
+      - name: blaise-server
+        image: replaceme
+        resources:
+          requests:
+            cpu: 250m
+            memory: 500Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        ports:
+        - containerPort: 4443
+          name: api
+        env:
+          - name: REDIS_HOST
+            value: redis-0.redis
+          - name: REDIS_DB
+            value: "11"
+          - name: DEBUG
+            value: "0"
+          - name: RPC_URL
+            value: http://daemon.pascalcoin:4003
+          - name: FCM_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: blaise
+                key: fcm_api_key
+          - name: FCM_SENDER_ID
+            valueFrom:
+              secretKeyRef:
+                name: blaise
+                key: fcm_sender
+          - name: FREEPASA_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: blaise
+                key: freepasa_api_key
+          - name: PUBKEY_B58
+            value: 3Ghhbokf2qNsZYmoK5kNvzo4zdoR5vcdMGEzf6Jgz3xZDrniNMFgrcwQaTjtkpvUvm1S7JStjxZZJWSSgxQECJdu4BhpAjPqQrDjoY
+          - name: SIGNER_ACCOUNT
+            value: 1185739

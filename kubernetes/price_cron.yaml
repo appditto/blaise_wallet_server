@@ -1,0 +1,22 @@
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: pascal-prices
+  namespace: pascalcoin
+spec:
+  schedule: "*/5 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: prices
+            image: replaceme
+            command: ["/bin/bash", "-c"]
+            args: ["python price_cron.py"]
+            env:
+              - name: REDIS_HOST
+                value: redis-0.redis
+              - name: REDIS_DB
+                value: "11"
+          restartPolicy: OnFailure

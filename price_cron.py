@@ -1,8 +1,8 @@
 # Intended to run as a standard cron job
 # Will fetch prices and save to the local redis instance
-import redis, json, time, sys, requests
+import redis, json, time, sys, requests, os
 
-rdata = redis.StrictRedis(db=2)
+rdata = redis.StrictRedis(host=os.getenv('REDIS_HOST', 'localhost'), port=6379, db=int(os.getenv('REDIS_DB', '2')))
 
 currency_list = [ "ARS", "AUD", "BRL", "BTC", "CAD", "CHF", "CLP", "CNY", "CZK", "DKK", "EUR", "GBP", "HKD", "HUF", "IDR", "ILS", "INR", "JPY", "KRW", "MXN", "MYR", "NOK", "NZD", "PHP", "PKR", "PLN", "RUB", "SEK", "SGD", "THB", "TRY", "TWD", "USD", "ZAR", "SAR", "AED", "KWD" ]
 

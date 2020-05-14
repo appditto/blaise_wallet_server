@@ -37,6 +37,7 @@ parser.add_argument('--host', type=str, help='Host to listen on (e.g. 127.0.0.1)
 parser.add_argument('--path', type=str, help='(Optional) Path to run application on (for unix socket, e.g. /tmp/blaiseapp.sock', default=None)
 parser.add_argument('-p', '--port', type=int, help='Port to listen on', default=4443)
 parser.add_argument('--log-file', type=str, help='Log file location', default='blaise_server.log')
+parser.add_argument('--log-to-stdout', action='store_true', help='Log to stdout', default=False)
 options = parser.parse_args()
 
 try:
@@ -698,8 +699,8 @@ async def init_app():
     async def open_redis(app):
         """Open redis connections"""
         log.server_logger.info("Opening redis connections")
-        app['rdata'] = await create_redis_pool(('localhost', 6379),
-                                                db=2, encoding='utf-8', minsize=2, maxsize=50)
+        app['rdata'] = await create_redis_pool((os.getenv('REDIS_HOST', 'localhost'), 6379),
+                                                db=int(os.getenv('REDIS_DB', '2')), encoding='utf-8', minsize=2, maxsize=50)
         app['clients'] = {} # Keep track of connected clients
         app['last_msg'] = {} # Last time a client has sent a message
         app['active_messages'] = set() # Avoid duplicate messages from being processes simultaneously
@@ -713,11 +714,17 @@ async def init_app():
         logging.basicConfig(level=logging.INFO)
     root = logging.getLogger('aiohttp.server')
     logging.basicConfig(level=logging.INFO)
-    handler = WatchedFileHandler(log_file)
-    formatter = logging.Formatter("%(asctime)s;%(levelname)s;%(message)s", "%Y-%m-%d %H:%M:%S %z")
-    handler.setFormatter(formatter)
-    root.addHandler(handler)
-    root.addHandler(TimedRotatingFileHandler(log_file, when="d", interval=1, backupCount=100))        
+    if options.log_to_stdout:
+        handler = logging.StreamHandler(sys.stdout)
+        formatter = logging.Formatter("%(asctime)s;%(levelname)s;%(message)s", "%Y-%m-%d %H:%M:%S %z")
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+    else:
+        handler = WatchedFileHandler(log_file)
+        formatter = logging.Formatter("%(asctime)s;%(levelname)s;%(message)s", "%Y-%m-%d %H:%M:%S %z")
+        handler.setFormatter(formatter)
+        root.addHandler(handler)
+        root.addHandler(TimedRotatingFileHandler(log_file, when="d", interval=1, backupCount=100))      
 
     app = web.Application()
     app.add_routes([web.get('/', websocket_handler)]) # All WS requests
