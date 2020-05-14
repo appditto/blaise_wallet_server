@@ -29,4 +29,4 @@ spec:
       - path: /
         backend:
           serviceName: blaise-server
-          servicePort: 4003
+          servicePort: 4443
