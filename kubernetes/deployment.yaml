@@ -52,4 +52,4 @@ spec:
           - name: PUBKEY_B58
             value: 3Ghhbokf2qNsZYmoK5kNvzo4zdoR5vcdMGEzf6Jgz3xZDrniNMFgrcwQaTjtkpvUvm1S7JStjxZZJWSSgxQECJdu4BhpAjPqQrDjoY
           - name: SIGNER_ACCOUNT
-            value: 1185739
+            value: "1185739"
