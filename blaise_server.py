@@ -458,7 +458,6 @@ async def http_api(r: web.Request):
             return web.json_response({'price':await r.app['rdata'].hget("prices", "coingecko:pasc-usd")})
         elif request_json['action'] == 'borrow_account':
             # IP Throttling on borrow_account
-            return web.json_response({'error': 'API temporarily disabled'})
             redis: Redis = r.app['rdata']
             borrow_redid = await redis.get(f'bip_{util.get_request_ip(r)}')
             if borrow_redid is not None:
