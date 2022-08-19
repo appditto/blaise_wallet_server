@@ -16,7 +16,7 @@ spec:
             args: ["python price_cron.py"]
             env:
               - name: REDIS_HOST
-                value: redis-0.redis
+                value: redis.redis
               - name: REDIS_DB
                 value: "11"
           restartPolicy: OnFailure
