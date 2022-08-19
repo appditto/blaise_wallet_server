@@ -4,11 +4,13 @@ import base58
 
 class Util:
     def get_request_ip(self, r : web.Request) -> str:
-        host = r.headers.get('X-FORWARDED-FOR',None)
+        host = r.headers.get('CF-Connecting-IP', None)
         if host is None:
-            peername = r.transport.get_extra_info('peername')
-            if peername is not None:
-                host, _ = peername
+            host = r.headers.get('X-FORWARDED-FOR',None)
+            if host is None:
+                peername = r.transport.get_extra_info('peername')
+                if peername is not None:
+                    host, _ = peername
         return host
 
     @staticmethod
