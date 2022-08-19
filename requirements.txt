@@ -1,6 +1,6 @@
 # Main server
 aiohttp
-aioredis
+aioredis>=1.3.1,<2.0.0
 aiofcm
 python-dotenv
 uvloop
